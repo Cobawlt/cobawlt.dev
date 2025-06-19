@@ -1,30 +1,27 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>cobawlt.dev</title>
   <style>
     html, body {
-      margin: 0;
-      padding: 0;
-      overflow: hidden;
+      margin: 0; padding: 0; overflow: hidden;
       background: black;
-      height: 100%;
-      width: 100%;
+      height: 100%; width: 100%;
     }
     canvas {
       display: block;
     }
     .center-text {
       position: absolute;
-      top: 50%;
-      left: 50%;
+      top: 50%; left: 50%;
       transform: translate(-50%, -50%);
       color: white;
       font-family: Arial, sans-serif;
       font-size: 36px;
       pointer-events: none;
       white-space: nowrap;
+      user-select: none;
     }
   </style>
 </head>
@@ -57,6 +54,7 @@
     const dots = [];
     const minSpeed = 0.2;
     const maxSpeed = 0.5;
+    const maxConnectDist = 150; // max distance to draw lines
 
     for (let i = 0; i < dotCount; i++) {
       dots.push({
@@ -88,7 +86,6 @@
       const repelDist = 100;
 
       if (dist < repelDist && dist > 0) {
-        // Normalize and repel
         const force = (repelDist - dist) / repelDist;
         dot.vx += (dx / dist) * force * 0.5;
         dot.vy += (dy / dist) * force * 0.5;
@@ -96,12 +93,11 @@
     }
 
     function bounceFromRect(dot, rect) {
-      const buffer = 5; // prevent sticking
+      const buffer = 5;
       if (
         dot.x > rect.x - buffer && dot.x < rect.x + rect.width + buffer &&
         dot.y > rect.y - buffer && dot.y < rect.y + rect.height + buffer
       ) {
-        // Determine nearest side to bounce off
         const leftDist = Math.abs(dot.x - rect.x);
         const rightDist = Math.abs(dot.x - (rect.x + rect.width));
         const topDist = Math.abs(dot.y - rect.y);
@@ -116,7 +112,6 @@
     }
 
     function enforceMinSpeed(dot) {
-      // Prevent the dot from stopping or jittering
       if (Math.abs(dot.vx) < minSpeed) dot.vx = minSpeed * Math.sign(dot.vx) || (Math.random() - 0.5) * maxSpeed;
       if (Math.abs(dot.vy) < minSpeed) dot.vy = minSpeed * Math.sign(dot.vy) || (Math.random() - 0.5) * maxSpeed;
     }
@@ -125,8 +120,38 @@
       ctx.clearRect(0, 0, width, height);
       const textRect = getTextRect();
 
+      // Draw lines first for better layering
+      for (let i = 0; i < dots.length; i++) {
+        const dot = dots[i];
+        // Find closest neighbors (max 4) within maxConnectDist
+        // Sort other dots by distance
+        let neighbors = [];
+        for (let j = 0; j < dots.length; j++) {
+          if (i === j) continue;
+          const other = dots[j];
+          const dx = dot.x - other.x;
+          const dy = dot.y - other.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist <= maxConnectDist) {
+            neighbors.push({ dot: other, dist });
+          }
+        }
+        neighbors.sort((a, b) => a.dist - b.dist);
+        neighbors = neighbors.slice(0, 4); // max 4 closest
+
+        // Draw lines to neighbors
+        for (const n of neighbors) {
+          ctx.beginPath();
+          ctx.strokeStyle = 'rgba(200, 200, 200, 0.3)';
+          ctx.lineWidth = 0.7;
+          ctx.moveTo(dot.x, dot.y);
+          ctx.lineTo(n.dot.x, n.dot.y);
+          ctx.stroke();
+        }
+      }
+
+      // Draw dots and update positions
       for (let dot of dots) {
-        // Movement
         dot.x += dot.vx;
         dot.y += dot.vy;
 
@@ -136,24 +161,20 @@
         if (dot.y < 0) { dot.y = 0; dot.vy *= -1; }
         if (dot.y > height) { dot.y = height; dot.vy *= -1; }
 
-        // Bounce off cursor
+        // Bounce from cursor and text box
         bounceFromCursor(dot);
-
-        // Bounce off text box
         bounceFromRect(dot, textRect);
-
-        // Enforce min speed to avoid stuck/jitter
         enforceMinSpeed(dot);
 
-        // Size change based on distance to cursor
+        // Dot size shrinks near mouse
         let dx = dot.x - mouse.x;
         let dy = dot.y - mouse.y;
         let dist = Math.sqrt(dx * dx + dy * dy);
         let size = dot.baseSize;
         if (mouse.x !== null && mouse.y !== null) {
-          let maxDist = 200;
+          const maxDist = 200;
           if (dist < maxDist) {
-            size *= dist / maxDist; // shrink closer
+            size *= dist / maxDist;
             if (size < 1) size = 1;
           }
         }
