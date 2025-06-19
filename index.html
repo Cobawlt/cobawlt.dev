@@ -98,16 +98,30 @@
       return performance.now();
     }
 
-    function recordBounce(dot) {
-      const t = now();
-      dot.bounceTimes.push(t);
-      // Remove bounces older than 1 second
-      dot.bounceTimes = dot.bounceTimes.filter(time => t - time <= 1000);
-      if (dot.bounceTimes.length > maxBouncesPerSec) {
-        // Start fading out
-        dot.fadingOut = true;
-      }
+function recordBounce(dot) {
+  const t = now();
+  // If last bounce was less than 200ms ago, ignore this bounce
+  if (dot.lastBounceTime && t - dot.lastBounceTime < 200) {
+    return;
+  }
+  dot.lastBounceTime = t;
+
+  dot.bounceTimes.push(t);
+  dot.bounceTimes = dot.bounceTimes.filter(time => t - time <= 1000);
+
+  // Instead of fading, we can clamp velocity here or ignore this part
+  if (dot.bounceTimes.length > maxBouncesPerSec) {
+    // You can reset velocity here or clamp speed
+    // For example, gently reset velocity to baseSpeed:
+    const speed = Math.sqrt(dot.vx * dot.vx + dot.vy * dot.vy);
+    if (speed > dot.baseSpeed * 1.5) {
+      // Scale velocity down smoothly
+      dot.vx *= 0.7;
+      dot.vy *= 0.7;
     }
+    // Or just do nothing and rely on gradual slow down
+  }
+}
 
     function bounceFromCursor(dot) {
       if (mouse.x === null || mouse.y === null) return false;
