@@ -122,7 +122,7 @@
       const dx = dot.x - mouse.x;
       const dy = dot.y - mouse.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
-      const repelDist = 30;
+      const repelDist = 45;
 
       if (dist < repelDist && dist > 0) {
         const force = (repelDist - dist) / repelDist;
@@ -300,7 +300,7 @@
     // New: Click/tap attractor
 let attractPoint = null;
 let attracting = false;
-const attractRadius = 100;
+const attractRadius = 170;
 const attractStrength = 0.25;
 
 function attractDots() {
