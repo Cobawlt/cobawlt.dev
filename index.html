@@ -52,17 +52,34 @@
 
     const dotCount = 100;
     const dots = [];
-    const minSpeed = 0.2;
-    const maxSpeed = 0.5;
-    const maxConnectDist = 150; // max distance to draw lines
+    const minSpeed = 0.15;
+    const maxSpeed = 0.4;
+    const maxConnectDist = 150;
+    const maxBouncesPerSec = 5;
+    const bounceSlowDownRate = 0.02; // how fast velocity slows down per frame towards baseSpeed
+
+    function randomVelocity() {
+      // generate initial velocity between minSpeed and maxSpeed in a random direction
+      const angle = Math.random() * Math.PI * 2;
+      const speed = minSpeed + Math.random() * (maxSpeed - minSpeed);
+      return {
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        baseSpeed: speed
+      };
+    }
 
     for (let i = 0; i < dotCount; i++) {
+      const { vx, vy, baseSpeed } = randomVelocity();
       dots.push({
         x: Math.random() * width,
         y: Math.random() * height,
-        vx: (Math.random() - 0.5) * maxSpeed,
-        vy: (Math.random() - 0.5) * maxSpeed,
-        baseSize: 3 + Math.random() * 2
+        vx, vy,
+        baseSpeed,
+        baseSize: 3 + Math.random() * 2,
+        bounceTimes: [], // timestamps of recent bounces for this dot
+        alpha: 1,
+        fadingOut: false,
       });
     }
 
@@ -77,8 +94,23 @@
       };
     }
 
+    function now() {
+      return performance.now();
+    }
+
+    function recordBounce(dot) {
+      const t = now();
+      dot.bounceTimes.push(t);
+      // Remove bounces older than 1 second
+      dot.bounceTimes = dot.bounceTimes.filter(time => t - time <= 1000);
+      if (dot.bounceTimes.length > maxBouncesPerSec) {
+        // Start fading out
+        dot.fadingOut = true;
+      }
+    }
+
     function bounceFromCursor(dot) {
-      if (mouse.x === null || mouse.y === null) return;
+      if (mouse.x === null || mouse.y === null) return false;
 
       const dx = dot.x - mouse.x;
       const dy = dot.y - mouse.y;
@@ -87,9 +119,13 @@
 
       if (dist < repelDist && dist > 0) {
         const force = (repelDist - dist) / repelDist;
-        dot.vx += (dx / dist) * force * 0.5;
-        dot.vy += (dy / dist) * force * 0.5;
+        // Apply repulsion velocity change scaled down for smoothness
+        dot.vx += (dx / dist) * force * 0.3;
+        dot.vy += (dy / dist) * force * 0.3;
+        recordBounce(dot);
+        return true;
       }
+      return false;
     }
 
     function bounceFromRect(dot, rect) {
@@ -108,23 +144,55 @@
         else if (minDist === rightDist) dot.vx = -Math.abs(dot.vx);
         else if (minDist === topDist) dot.vy = Math.abs(dot.vy);
         else if (minDist === bottomDist) dot.vy = -Math.abs(dot.vy);
+
+        recordBounce(dot);
+        return true;
       }
+      return false;
     }
 
     function enforceMinSpeed(dot) {
-      if (Math.abs(dot.vx) < minSpeed) dot.vx = minSpeed * Math.sign(dot.vx) || (Math.random() - 0.5) * maxSpeed;
-      if (Math.abs(dot.vy) < minSpeed) dot.vy = minSpeed * Math.sign(dot.vy) || (Math.random() - 0.5) * maxSpeed;
+      const speed = Math.sqrt(dot.vx * dot.vx + dot.vy * dot.vy);
+      if (speed === 0) {
+        // reinitialize velocity
+        const angle = Math.random() * Math.PI * 2;
+        dot.vx = Math.cos(angle) * dot.baseSpeed;
+        dot.vy = Math.sin(angle) * dot.baseSpeed;
+        return;
+      }
+      // Normalize velocity to baseSpeed gradually if too fast or slow
+      const speedDiff = speed - dot.baseSpeed;
+      if (Math.abs(speedDiff) > 0.01) {
+        dot.vx -= (speedDiff / speed) * dot.vx * bounceSlowDownRate;
+        dot.vy -= (speedDiff / speed) * dot.vy * bounceSlowDownRate;
+      }
+    }
+
+    function fadeOutAndRespawn(dot) {
+      if (!dot.fadingOut) return;
+
+      dot.alpha -= 0.02; // fade out speed
+      if (dot.alpha <= 0) {
+        // Respawn dot at random position
+        dot.x = Math.random() * width;
+        dot.y = Math.random() * height;
+        const { vx, vy, baseSpeed } = randomVelocity();
+        dot.vx = vx;
+        dot.vy = vy;
+        dot.baseSpeed = baseSpeed;
+        dot.alpha = 1;
+        dot.fadingOut = false;
+        dot.bounceTimes = [];
+      }
     }
 
     function draw() {
       ctx.clearRect(0, 0, width, height);
       const textRect = getTextRect();
 
-      // Draw lines first for better layering
+      // Draw lines first
       for (let i = 0; i < dots.length; i++) {
         const dot = dots[i];
-        // Find closest neighbors (max 4) within maxConnectDist
-        // Sort other dots by distance
         let neighbors = [];
         for (let j = 0; j < dots.length; j++) {
           if (i === j) continue;
@@ -137,12 +205,11 @@
           }
         }
         neighbors.sort((a, b) => a.dist - b.dist);
-        neighbors = neighbors.slice(0, 4); // max 4 closest
+        neighbors = neighbors.slice(0, 4);
 
-        // Draw lines to neighbors
         for (const n of neighbors) {
           ctx.beginPath();
-          ctx.strokeStyle = 'rgba(200, 200, 200, 0.3)';
+          ctx.strokeStyle = `rgba(200,200,200,0.3)`;
           ctx.lineWidth = 0.7;
           ctx.moveTo(dot.x, dot.y);
           ctx.lineTo(n.dot.x, n.dot.y);
@@ -150,23 +217,34 @@
         }
       }
 
-      // Draw dots and update positions
       for (let dot of dots) {
-        dot.x += dot.vx;
-        dot.y += dot.vy;
+        if (!dot.fadingOut) {
+          // Update position
+          dot.x += dot.vx;
+          dot.y += dot.vy;
 
-        // Bounce off edges
-        if (dot.x < 0) { dot.x = 0; dot.vx *= -1; }
-        if (dot.x > width) { dot.x = width; dot.vx *= -1; }
-        if (dot.y < 0) { dot.y = 0; dot.vy *= -1; }
-        if (dot.y > height) { dot.y = height; dot.vy *= -1; }
+          // Bounce off edges
+          let bounced = false;
+          if (dot.x < 0) { dot.x = 0; dot.vx = Math.abs(dot.vx); bounced = true; }
+          if (dot.x > width) { dot.x = width; dot.vx = -Math.abs(dot.vx); bounced = true; }
+          if (dot.y < 0) { dot.y = 0; dot.vy = Math.abs(dot.vy); bounced = true; }
+          if (dot.y > height) { dot.y = height; dot.vy = -Math.abs(dot.vy); bounced = true; }
+          if (bounced) recordBounce(dot);
 
-        // Bounce from cursor and text box
-        bounceFromCursor(dot);
-        bounceFromRect(dot, textRect);
-        enforceMinSpeed(dot);
+          // Bounce from cursor or text box
+          let bouncedCursor = bounceFromCursor(dot);
+          let bouncedText = bounceFromRect(dot, textRect);
 
-        // Dot size shrinks near mouse
+          // Gradually slow velocity towards base speed (only if not bouncing this frame)
+          if (!bounced && !bouncedCursor && !bouncedText) {
+            enforceMinSpeed(dot);
+          }
+        }
+
+        // Handle fading and respawning
+        fadeOutAndRespawn(dot);
+
+        // Size shrink near mouse
         let dx = dot.x - mouse.x;
         let dy = dot.y - mouse.y;
         let dist = Math.sqrt(dx * dx + dy * dy);
@@ -181,7 +259,7 @@
 
         ctx.beginPath();
         ctx.arc(dot.x, dot.y, size, 0, Math.PI * 2);
-        ctx.fillStyle = 'white';
+        ctx.fillStyle = `rgba(255, 255, 255, ${dot.alpha})`;
         ctx.fill();
       }
 
