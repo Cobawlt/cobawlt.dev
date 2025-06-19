@@ -25,81 +25,11 @@
       user-select: none;
       z-index: 1;
     }
-
-    /* Controls panel styling */
-    #controlsToggle {
-      position: fixed;
-      bottom: 20px;
-      right: 20px;
-      background: #222;
-      border: 1px solid #555;
-      padding: 10px 16px;
-      cursor: pointer;
-      user-select: none;
-      border-radius: 5px;
-      z-index: 10;
-      transition: background-color 0.3s;
-    }
-    #controlsToggle:hover {
-      background: #444;
-    }
-    #controlsPanel {
-      position: fixed;
-      bottom: 60px;
-      right: 20px;
-      background: #111;
-      border: 1px solid #555;
-      border-radius: 6px;
-      padding: 12px 16px;
-      width: 240px;
-      max-height: 0;
-      overflow: hidden;
-      transition: max-height 0.4s ease;
-      z-index: 9;
-    }
-    #controlsPanel.open {
-      max-height: 300px;
-    }
-    .control-group {
-      margin-bottom: 12px;
-    }
-    label {
-      display: block;
-      font-size: 14px;
-      margin-bottom: 4px;
-    }
-    input[type=range] {
-      width: 100%;
-    }
-    #dotCountVal {
-      float: right;
-      font-weight: bold;
-    }
   </style>
 </head>
 <body>
   <canvas id="canvas"></canvas>
   <div class="center-text" id="centerText">cobawlt.dev</div>
-
-  <div id="controlsToggle">⚙️ Controls</div>
-  <div id="controlsPanel">
-    <div class="control-group">
-      <label for="dotCount">Dot Count <span id="dotCountVal"></span></label>
-      <input type="range" id="dotCount" min="10" max="300" step="1" value="100" />
-    </div>
-    <div class="control-group">
-      <label for="dotSize">Dot Base Size</label>
-      <input type="range" id="dotSize" min="1" max="8" step="0.1" value="4" />
-    </div>
-    <div class="control-group">
-      <label for="maxConnectDist">Max Connection Distance</label>
-      <input type="range" id="maxConnectDist" min="50" max="300" step="5" value="150" />
-    </div>
-    <div class="control-group">
-      <label for="dotSpeed">Dot Speed (max velocity)</label>
-      <input type="range" id="dotSpeed" min="0.1" max="1" step="0.05" value="0.4" />
-    </div>
-  </div>
 
   <script>
     const canvas = document.getElementById('canvas');
@@ -122,35 +52,16 @@
 
     resize();
 
-    // Variables controlled by sliders:
-    let dotCount = 100;
-    let baseDotSize = 4;
-    let maxConnectDist = 150;
-    let maxSpeed = 0.4;
+    const dotCount = 100;
+    const dots = [];
     const minSpeed = 0.15;
+    const maxSpeed = 0.4;
+    const maxConnectDist = 172.5; // 150 * 1.15
+    const maxBouncesPerSec = 5;
+    const bounceSlowDownRate = 0.02; 
 
-    // UI Elements
-    const controlsToggle = document.getElementById('controlsToggle');
-    const controlsPanel = document.getElementById('controlsPanel');
-    const dotCountSlider = document.getElementById('dotCount');
-    const dotSizeSlider = document.getElementById('dotSize');
-    const maxConnectSlider = document.getElementById('maxConnectDist');
-    const dotSpeedSlider = document.getElementById('dotSpeed');
-    const dotCountVal = document.getElementById('dotCountVal');
-
-    dotCountVal.textContent = dotCountSlider.value;
-
-    controlsToggle.addEventListener('click', () => {
-      controlsPanel.classList.toggle('open');
-    });
-
-    // Update dotCount text dynamically
-    dotCountSlider.addEventListener('input', () => {
-      dotCountVal.textContent = dotCountSlider.value;
-    });
-
-    // Dot data structure
-    let dots = [];
+    // Map to store line opacities keyed by 'i-j' string (i<j)
+    const lineOpacities = new Map();
 
     function randomVelocity() {
       const angle = Math.random() * Math.PI * 2;
@@ -162,25 +73,20 @@
       };
     }
 
-    function initDots() {
-      dots = [];
-      for (let i = 0; i < dotCount; i++) {
-        const { vx, vy, baseSpeed } = randomVelocity();
-        dots.push({
-          x: Math.random() * width,
-          y: Math.random() * height,
-          vx, vy,
-          baseSpeed,
-          baseSize: baseDotSize + (Math.random() - 0.5), // slight random variation
-          bounceTimes: [],
-          alpha: 1,
-          fadingOut: false,
-          lastBounceTime: 0,
-        });
-      }
+    for (let i = 0; i < dotCount; i++) {
+      const { vx, vy, baseSpeed } = randomVelocity();
+      dots.push({
+        x: Math.random() * width,
+        y: Math.random() * height,
+        vx, vy,
+        baseSpeed,
+        baseSize: 3 + Math.random() * 2,
+        bounceTimes: [],
+        alpha: 1,
+        fadingOut: false,
+        lastBounceTime: 0,
+      });
     }
-
-    initDots();
 
     function getTextRect() {
       const textElem = document.getElementById('centerText');
@@ -208,7 +114,7 @@
       dot.bounceTimes = dot.bounceTimes.filter(time => t - time <= 1000);
     }
 
-    // Mouse repulsion radius smaller for precision
+    // Reduced mouse repel radius to 60
     function bounceFromCursor(dot) {
       if (mouse.x === null || mouse.y === null) return false;
 
@@ -227,7 +133,7 @@
       return false;
     }
 
-    // Fade out dots on text collision and respawn
+    // On text bounce, fade out dot & respawn
     function bounceFromRect(dot, rect) {
       const buffer = 5;
       if (
@@ -254,8 +160,8 @@
       }
       const speedDiff = speed - dot.baseSpeed;
       if (Math.abs(speedDiff) > 0.01) {
-        dot.vx -= (speedDiff / speed) * dot.vx * 0.02;
-        dot.vy -= (speedDiff / speed) * dot.vy * 0.02;
+        dot.vx -= (speedDiff / speed) * dot.vx * bounceSlowDownRate;
+        dot.vy -= (speedDiff / speed) * dot.vy * bounceSlowDownRate;
       }
     }
 
@@ -277,13 +183,14 @@
       }
     }
 
-    // Line connection animation state
-    const lineOpacities = new Map();
-
+    // === updateLineOpacities with animation from earlier ===
     function updateLineOpacities(connections) {
+      // Mark all existing connections inactive initially
       for (const key of lineOpacities.keys()) {
         lineOpacities.set(key, { ...lineOpacities.get(key), active: false });
       }
+
+      // Mark current connections active, increase opacity and progress
       for (const [i, j] of connections) {
         const key = i < j ? `${i}-${j}` : `${j}-${i}`;
         const prev = lineOpacities.get(key);
@@ -295,6 +202,8 @@
           lineOpacities.set(key, { opacity: 0.05, active: true, progress: 0.05 });
         }
       }
+
+      // Fade out inactive connections
       for (const [key, val] of lineOpacities.entries()) {
         if (!val.active) {
           const newOpacity = val.opacity * 0.9;
@@ -308,6 +217,7 @@
       }
     }
 
+    // === drawLines with animation from earlier ===
     function drawLines(dots) {
       for (const [key, val] of lineOpacities.entries()) {
         if (val.opacity <= 0 || val.progress <= 0) continue;
@@ -318,6 +228,7 @@
         const midX = (d1.x + d2.x) / 2;
         const midY = (d1.y + d2.y) / 2;
 
+        // Partial points along line from dot to midpoint scaled by progress
         const p1x = d1.x + (midX - d1.x) * val.progress;
         const p1y = d1.y + (midY - d1.y) * val.progress;
 
@@ -327,11 +238,13 @@
         ctx.strokeStyle = `rgba(200,200,200,${val.opacity})`;
         ctx.lineWidth = 0.7;
 
+        // Draw line from dot1 to partial midpoint
         ctx.beginPath();
         ctx.moveTo(d1.x, d1.y);
         ctx.lineTo(p1x, p1y);
         ctx.stroke();
 
+        // Draw line from dot2 to partial midpoint
         ctx.beginPath();
         ctx.moveTo(d2.x, d2.y);
         ctx.lineTo(p2x, p2y);
@@ -339,7 +252,7 @@
       }
     }
 
-    // Detect and handle dot collisions (simple elastic bounce)
+    // Dot-to-dot collision (elastic bounce)
     function handleDotCollisions() {
       for (let i = 0; i < dots.length; i++) {
         const a = dots[i];
@@ -354,26 +267,20 @@
           const minDist = (a.baseSize + b.baseSize);
 
           if (dist > 0 && dist < minDist) {
-            // Normalize
             const nx = dx / dist;
             const ny = dy / dist;
-            // Overlap
             const overlap = minDist - dist;
 
-            // Push dots apart
             a.x -= nx * overlap / 2;
             a.y -= ny * overlap / 2;
             b.x += nx * overlap / 2;
             b.y += ny * overlap / 2;
 
-            // Relative velocity
             const dvx = b.vx - a.vx;
             const dvy = b.vy - a.vy;
 
-            // Dot product of relative velocity and normal vector
             const impactSpeed = dvx * nx + dvy * ny;
             if (impactSpeed < 0) {
-              // Elastic collision response (simplified)
               const impulse = impactSpeed;
 
               a.vx += impulse * nx;
@@ -388,6 +295,43 @@
         }
       }
     }
+
+    // New: Click/tap attractor
+    let attractPoint = null;
+    const attractRadius = 100;
+    const attractStrength = 0.25;
+
+    function attractDots() {
+      if (!attractPoint) return;
+      for (const dot of dots) {
+        if (dot.fadingOut) continue;
+
+        const dx = attractPoint.x - dot.x;
+        const dy = attractPoint.y - dot.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist < attractRadius && dist > 0) {
+          // Normalize direction toward attractPoint
+          const nx = dx / dist;
+          const ny = dy / dist;
+          // Apply acceleration scaled by distance
+          const accel = attractStrength * (1 - dist / attractRadius);
+          dot.vx += nx * accel;
+          dot.vy += ny * accel;
+        }
+      }
+    }
+
+    canvas.addEventListener('click', e => {
+      attractPoint = { x: e.clientX, y: e.clientY };
+    });
+
+    canvas.addEventListener('touchstart', e => {
+      if(e.touches.length > 0){
+        const touch = e.touches[0];
+        attractPoint = { x: touch.clientX, y: touch.clientY };
+      }
+    }, {passive:true});
 
     function draw() {
       ctx.clearRect(0, 0, width, height);
@@ -422,6 +366,7 @@
       drawLines(dots);
 
       handleDotCollisions();
+      attractDots();
 
       for (let dot of dots) {
         if (!dot.fadingOut) {
@@ -465,38 +410,6 @@
 
       requestAnimationFrame(draw);
     }
-
-    // Hook up sliders to update variables and reinit dots if needed
-    dotCountSlider.addEventListener('change', () => {
-      dotCount = parseInt(dotCountSlider.value);
-      dotCountVal.textContent = dotCount;
-      initDots();
-    });
-
-    dotSizeSlider.addEventListener('input', () => {
-      baseDotSize = parseFloat(dotSizeSlider.value);
-      dots.forEach(dot => {
-        dot.baseSize = baseDotSize + (Math.random() - 0.5);
-      });
-    });
-
-    maxConnectSlider.addEventListener('input', () => {
-      maxConnectDist = parseInt(maxConnectSlider.value);
-    });
-
-    dotSpeedSlider.addEventListener('input', () => {
-      maxSpeed = parseFloat(dotSpeedSlider.value);
-      dots.forEach(dot => {
-        // Adjust baseSpeed & velocity magnitude proportionally
-        const angle = Math.atan2(dot.vy, dot.vx);
-        dot.baseSpeed = minSpeed + Math.random() * (maxSpeed - minSpeed);
-        const speed = Math.sqrt(dot.vx * dot.vx + dot.vy * dot.vy);
-        if (speed > 0) {
-          dot.vx = Math.cos(angle) * dot.baseSpeed;
-          dot.vy = Math.sin(angle) * dot.baseSpeed;
-        }
-      });
-    });
 
     draw();
   </script>
