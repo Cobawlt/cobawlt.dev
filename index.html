@@ -1,1 +1,107 @@
-<h1>Hello World!</h1>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>cobawlt.dev</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: black;
+      height: 100%;
+      width: 100%;
+    }
+    canvas {
+      display: block;
+    }
+    .center-text {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: white;
+      font-family: Arial, sans-serif;
+      font-size: 36px;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  <div class="center-text">cobawlt.dev</div>
+
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    let width, height;
+    let mouse = { x: null, y: null };
+
+    function resize() {
+      width = window.innerWidth;
+      height = window.innerHeight;
+      canvas.width = width;
+      canvas.height = height;
+    }
+
+    window.addEventListener('resize', resize);
+    window.addEventListener('mousemove', e => {
+      mouse.x = e.clientX;
+      mouse.y = e.clientY;
+    });
+
+    resize();
+
+    const dotCount = 100;
+    const dots = [];
+
+    for (let i = 0; i < dotCount; i++) {
+      dots.push({
+        x: Math.random() * width,
+        y: Math.random() * height,
+        vx: (Math.random() - 0.5) * 1,
+        vy: (Math.random() - 0.5) * 1,
+        baseSize: 3 + Math.random() * 2
+      });
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, width, height);
+
+      for (let dot of dots) {
+        // Move dots
+        dot.x += dot.vx;
+        dot.y += dot.vy;
+
+        // Bounce off edges
+        if (dot.x < 0 || dot.x > width) dot.vx *= -1;
+        if (dot.y < 0 || dot.y > height) dot.vy *= -1;
+
+        // Calculate distance to mouse
+        let dx = dot.x - mouse.x;
+        let dy = dot.y - mouse.y;
+        let dist = Math.sqrt(dx * dx + dy * dy);
+
+        // Size adjustment based on distance
+        let size = dot.baseSize;
+        if (mouse.x !== null && mouse.y !== null) {
+          let maxDist = 200;
+          if (dist < maxDist) {
+            size *= dist / maxDist; // shrink when closer
+            if (size < 1) size = 1; // minimum size
+          }
+        }
+
+        ctx.beginPath();
+        ctx.arc(dot.x, dot.y, size, 0, Math.PI * 2);
+        ctx.fillStyle = 'white';
+        ctx.fill();
+      }
+
+      requestAnimationFrame(draw);
+    }
+
+    draw();
+  </script>
+</body>
+</html>
