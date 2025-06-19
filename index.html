@@ -213,7 +213,7 @@
         if (dist > 0) {
           const nx = dx / dist;
           const ny = dy / dist;
-          let force = 0.005;
+          let force = 0.00000005;
           const minDist = (a.baseSize + b.baseSize) * 1.5;
           if (dist < minDist) {
             force *= dist / minDist; // weaken attraction if dots are too close
