@@ -297,30 +297,63 @@
     }
 
     // New: Click/tap attractor
-    let attractPoint = null;
-    const attractRadius = 100;
-    const attractStrength = 0.25;
+let attractPoint = null;
+let attracting = false;
+const attractRadius = 100;
+const attractStrength = 0.25;
 
-    function attractDots() {
-      if (!attractPoint) return;
-      for (const dot of dots) {
-        if (dot.fadingOut) continue;
+function attractDots() {
+  if (!attracting || !attractPoint) return;
+  for (const dot of dots) {
+    if (dot.fadingOut) continue;
 
-        const dx = attractPoint.x - dot.x;
-        const dy = attractPoint.y - dot.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
+    const dx = attractPoint.x - dot.x;
+    const dy = attractPoint.y - dot.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
 
-        if (dist < attractRadius && dist > 0) {
-          // Normalize direction toward attractPoint
-          const nx = dx / dist;
-          const ny = dy / dist;
-          // Apply acceleration scaled by distance
-          const accel = attractStrength * (1 - dist / attractRadius);
-          dot.vx += nx * accel;
-          dot.vy += ny * accel;
-        }
-      }
+    if (dist < attractRadius && dist > 0) {
+      const nx = dx / dist;
+      const ny = dy / dist;
+      const accel = attractStrength * (1 - dist / attractRadius);
+      dot.vx += nx * accel;
+      dot.vy += ny * accel;
     }
+  }
+}
+
+// Mouse handling
+canvas.addEventListener('mousedown', e => {
+  attracting = true;
+  attractPoint = { x: e.clientX, y: e.clientY };
+});
+canvas.addEventListener('mousemove', e => {
+  if (attracting) {
+    attractPoint = { x: e.clientX, y: e.clientY };
+  }
+});
+canvas.addEventListener('mouseup', () => {
+  attracting = false;
+});
+
+// Touch handling
+canvas.addEventListener('touchstart', e => {
+  attracting = true;
+  if (e.touches.length > 0) {
+    const touch = e.touches[0];
+    attractPoint = { x: touch.clientX, y: touch.clientY };
+  }
+}, { passive: true });
+
+canvas.addEventListener('touchmove', e => {
+  if (e.touches.length > 0 && attracting) {
+    const touch = e.touches[0];
+    attractPoint = { x: touch.clientX, y: touch.clientY };
+  }
+}, { passive: true });
+
+canvas.addEventListener('touchend', () => {
+  attracting = false;
+});
 
     canvas.addEventListener('click', e => {
       attractPoint = { x: e.clientX, y: e.clientY };
