@@ -122,12 +122,12 @@
       const dx = dot.x - mouse.x;
       const dy = dot.y - mouse.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
-      const repelDist = 60;
+      const repelDist = 30;
 
       if (dist < repelDist && dist > 0) {
         const force = (repelDist - dist) / repelDist;
-        dot.vx += (dx / dist) * force * 0.3;
-        dot.vy += (dy / dist) * force * 0.3;
+        dot.vx += (dx / dist) * force * 0.15;
+        dot.vy += (dy / dist) * force * 0.15;
         recordBounce(dot);
         return true;
       }
@@ -197,10 +197,10 @@
         const prev = lineOpacities.get(key);
         if (prev) {
           const newOpacity = Math.min(prev.opacity + 0.05, 0.35);
-          const newProgress = Math.min((prev.progress || 0) + 0.05, 1);
+          const newProgress = Math.min((prev.progress || 0) + 0.025, 1);
           lineOpacities.set(key, { opacity: newOpacity, active: true, progress: newProgress });
         } else {
-          lineOpacities.set(key, { opacity: 0.05, active: true, progress: 0.05 });
+          lineOpacities.set(key, { opacity: 0.05, active: true, progress: 0.025 });
         }
       }
 
