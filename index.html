@@ -56,11 +56,8 @@
     const dots = [];
     const minSpeed = 0.15;
     const maxSpeed = 0.4;
-    const maxConnectDist = 172.5; // 150 * 1.15
-    const maxBouncesPerSec = 5;
-    const bounceSlowDownRate = 0.02; 
-
-    // Map to store line opacities keyed by 'i-j' string (i<j)
+    const maxConnectDist = 172.5;
+    const bounceSlowDownRate = 0.02;
     const lineOpacities = new Map();
 
     function randomVelocity() {
@@ -88,68 +85,6 @@
       });
     }
 
-    function getTextRect() {
-      const textElem = document.getElementById('centerText');
-      const rect = textElem.getBoundingClientRect();
-      return {
-        x: rect.left,
-        y: rect.top,
-        width: rect.width,
-        height: rect.height
-      };
-    }
-
-    function now() {
-      return performance.now();
-    }
-
-    function recordBounce(dot) {
-      const t = now();
-      if (dot.lastBounceTime && t - dot.lastBounceTime < 200) {
-        return;
-      }
-      dot.lastBounceTime = t;
-
-      dot.bounceTimes.push(t);
-      dot.bounceTimes = dot.bounceTimes.filter(time => t - time <= 1000);
-    }
-
-    // Reduced mouse repel radius to 60
-    function bounceFromCursor(dot) {
-      if (mouse.x === null || mouse.y === null) return false;
-
-      const dx = dot.x - mouse.x;
-      const dy = dot.y - mouse.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      const repelDist = 60;
-
-      if (dist < repelDist && dist > 0) {
-        const force = (repelDist - dist) / repelDist;
-        dot.vx += (dx / dist) * force * 0.3;
-        dot.vy += (dy / dist) * force * 0.3;
-        recordBounce(dot);
-        return true;
-      }
-      return false;
-    }
-
-    // On text bounce, fade out dot & respawn
-    function bounceFromRect(dot, rect) {
-      const buffer = 5;
-      if (
-        dot.x > rect.x - buffer && dot.x < rect.x + rect.width + buffer &&
-        dot.y > rect.y - buffer && dot.y < rect.y + rect.height + buffer
-      ) {
-        if (!dot.fadingOut) {
-          dot.fadingOut = true;
-          dot.bounceTimes = [];
-          dot.lastBounceTime = 0;
-        }
-        return true;
-      }
-      return false;
-    }
-
     function enforceMinSpeed(dot) {
       const speed = Math.sqrt(dot.vx * dot.vx + dot.vy * dot.vy);
       if (speed === 0) {
@@ -167,7 +102,6 @@
 
     function fadeOutAndRespawn(dot) {
       if (!dot.fadingOut) return;
-
       dot.alpha -= 0.02;
       if (dot.alpha <= 0) {
         dot.x = Math.random() * width;
@@ -179,18 +113,13 @@
         dot.alpha = 1;
         dot.fadingOut = false;
         dot.bounceTimes = [];
-        dot.lastBounceTime = 0;
       }
     }
 
-    // === updateLineOpacities with animation from earlier ===
     function updateLineOpacities(connections) {
-      // Mark all existing connections inactive initially
       for (const key of lineOpacities.keys()) {
         lineOpacities.set(key, { ...lineOpacities.get(key), active: false });
       }
-
-      // Mark current connections active, increase opacity and progress
       for (const [i, j] of connections) {
         const key = i < j ? `${i}-${j}` : `${j}-${i}`;
         const prev = lineOpacities.get(key);
@@ -202,8 +131,6 @@
           lineOpacities.set(key, { opacity: 0.05, active: true, progress: 0.05 });
         }
       }
-
-      // Fade out inactive connections
       for (const [key, val] of lineOpacities.entries()) {
         if (!val.active) {
           const newOpacity = val.opacity * 0.9;
@@ -217,34 +144,28 @@
       }
     }
 
-    // === drawLines with animation from earlier ===
     function drawLines(dots) {
       for (const [key, val] of lineOpacities.entries()) {
         if (val.opacity <= 0 || val.progress <= 0) continue;
         const [i, j] = key.split('-').map(Number);
         const d1 = dots[i];
         const d2 = dots[j];
-
         const midX = (d1.x + d2.x) / 2;
         const midY = (d1.y + d2.y) / 2;
 
-        // Partial points along line from dot to midpoint scaled by progress
         const p1x = d1.x + (midX - d1.x) * val.progress;
         const p1y = d1.y + (midY - d1.y) * val.progress;
-
         const p2x = d2.x + (midX - d2.x) * val.progress;
         const p2y = d2.y + (midY - d2.y) * val.progress;
 
         ctx.strokeStyle = `rgba(200,200,200,${val.opacity})`;
         ctx.lineWidth = 0.7;
 
-        // Draw line from dot1 to partial midpoint
         ctx.beginPath();
         ctx.moveTo(d1.x, d1.y);
         ctx.lineTo(p1x, p1y);
         ctx.stroke();
 
-        // Draw line from dot2 to partial midpoint
         ctx.beginPath();
         ctx.moveTo(d2.x, d2.y);
         ctx.lineTo(p2x, p2y);
@@ -252,7 +173,6 @@
       }
     }
 
-    // Dot-to-dot collision (elastic bounce)
     function handleDotCollisions() {
       for (let i = 0; i < dots.length; i++) {
         const a = dots[i];
@@ -266,76 +186,49 @@
           const dist = Math.sqrt(dx * dx + dy * dy);
           const minDist = (a.baseSize + b.baseSize);
 
-          if (dist > 0 && dist < minDist) {
+          if (dist > 0 && dist < 1.5 * minDist) {
             const nx = dx / dist;
             const ny = dy / dist;
-            const overlap = minDist - dist;
+            const overlap = 1.5 * minDist - dist;
 
-            a.x -= nx * overlap / 2;
-            a.y -= ny * overlap / 2;
-            b.x += nx * overlap / 2;
-            b.y += ny * overlap / 2;
-
-            const dvx = b.vx - a.vx;
-            const dvy = b.vy - a.vy;
-
-            const impactSpeed = dvx * nx + dvy * ny;
-            if (impactSpeed < 0) {
-              const impulse = impactSpeed;
-
-              a.vx += impulse * nx;
-              a.vy += impulse * ny;
-              b.vx -= impulse * nx;
-              b.vy -= impulse * ny;
-
-              recordBounce(a);
-              recordBounce(b);
-            }
+            a.vx -= nx * overlap * 0.005;
+            a.vy -= ny * overlap * 0.005;
+            b.vx += nx * overlap * 0.005;
+            b.vy += ny * overlap * 0.005;
           }
         }
       }
     }
 
-    // New: Click/tap attractor
-    let attractPoint = null;
-    const attractRadius = 100;
-    const attractStrength = 0.25;
+    // Apply attraction for connected dots (force weakens if they get too close)
+    function applyConnectionForces(connections) {
+      for (const [i, j] of connections) {
+        const a = dots[i];
+        const b = dots[j];
+        if (a.fadingOut || b.fadingOut) continue;
 
-    function attractDots() {
-      if (!attractPoint) return;
-      for (const dot of dots) {
-        if (dot.fadingOut) continue;
-
-        const dx = attractPoint.x - dot.x;
-        const dy = attractPoint.y - dot.y;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
-
-        if (dist < attractRadius && dist > 0) {
-          // Normalize direction toward attractPoint
+        if (dist > 0) {
           const nx = dx / dist;
           const ny = dy / dist;
-          // Apply acceleration scaled by distance
-          const accel = attractStrength * (1 - dist / attractRadius);
-          dot.vx += nx * accel;
-          dot.vy += ny * accel;
+          let force = 0.005;
+          const minDist = (a.baseSize + b.baseSize) * 1.5;
+          if (dist < minDist) {
+            force *= dist / minDist; // weaken attraction if dots are too close
+          }
+
+          a.vx += nx * force;
+          a.vy += ny * force;
+          b.vx -= nx * force;
+          b.vy -= ny * force;
         }
       }
     }
 
-    canvas.addEventListener('click', e => {
-      attractPoint = { x: e.clientX, y: e.clientY };
-    });
-
-    canvas.addEventListener('touchstart', e => {
-      if(e.touches.length > 0){
-        const touch = e.touches[0];
-        attractPoint = { x: touch.clientX, y: touch.clientY };
-      }
-    }, {passive:true});
-
     function draw() {
       ctx.clearRect(0, 0, width, height);
-      const textRect = getTextRect();
 
       const currentConnections = [];
       for (let i = 0; i < dots.length; i++) {
@@ -364,46 +257,25 @@
 
       updateLineOpacities(currentConnections);
       drawLines(dots);
-
       handleDotCollisions();
-      attractDots();
+      applyConnectionForces(currentConnections);
 
       for (let dot of dots) {
         if (!dot.fadingOut) {
           dot.x += dot.vx;
           dot.y += dot.vy;
 
-          let bounced = false;
-          if (dot.x < 0) { dot.x = 0; dot.vx = Math.abs(dot.vx); bounced = true; }
-          if (dot.x > width) { dot.x = width; dot.vx = -Math.abs(dot.vx); bounced = true; }
-          if (dot.y < 0) { dot.y = 0; dot.vy = Math.abs(dot.vy); bounced = true; }
-          if (dot.y > height) { dot.y = height; dot.vy = -Math.abs(dot.vy); bounced = true; }
-          if (bounced) recordBounce(dot);
+          if (dot.x < 0) { dot.x = 0; dot.vx = Math.abs(dot.vx); }
+          if (dot.x > width) { dot.x = width; dot.vx = -Math.abs(dot.vx); }
+          if (dot.y < 0) { dot.y = 0; dot.vy = Math.abs(dot.vy); }
+          if (dot.y > height) { dot.y = height; dot.vy = -Math.abs(dot.vy); }
 
-          const bouncedCursor = bounceFromCursor(dot);
-          const bouncedText = bounceFromRect(dot, textRect);
-
-          if (!bounced && !bouncedCursor && !bouncedText) {
-            enforceMinSpeed(dot);
-          }
+          enforceMinSpeed(dot);
         }
-
         fadeOutAndRespawn(dot);
 
-        let dx = dot.x - mouse.x;
-        let dy = dot.y - mouse.y;
-        let dist = Math.sqrt(dx * dx + dy * dy);
-        let size = dot.baseSize;
-        if (mouse.x !== null && mouse.y !== null) {
-          const maxDist = 200;
-          if (dist < maxDist) {
-            size *= dist / maxDist;
-            if (size < 1) size = 1;
-          }
-        }
-
         ctx.beginPath();
-        ctx.arc(dot.x, dot.y, size, 0, Math.PI * 2);
+        ctx.arc(dot.x, dot.y, dot.baseSize, 0, Math.PI * 2);
         ctx.fillStyle = `rgba(255, 255, 255, ${dot.alpha})`;
         ctx.fill();
       }
