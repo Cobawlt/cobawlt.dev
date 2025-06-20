@@ -25,6 +25,11 @@
       white-space: nowrap;
       user-select: none;
       z-index: 1;
+      opacity: 1;
+      transition: opacity 1s ease;
+    }
+    .hidden {
+      opacity: 0;
     }
   </style>
 </head>
@@ -62,9 +67,9 @@
     const lineOpacities = new Map();
 
     let animationStartTime = performance.now();
-    const textHoldDuration = 3000; // 3 seconds hold
+    const textHoldDuration = 3000; // dots form text for 3s
+    const textHideDuration = 5000; // text hidden for first 5s (extra time for text fade)
 
-    // Generate positions spelling 'cobawlt.dev'
     const textDots = [];
     const textToRender = "cobawlt.dev";
     const textSize = 100;
@@ -195,8 +200,9 @@
       }
     }
 
-    function fadeOutAndRespawn(dot) {
+    function fadeOutAndRespawn(dot, elapsed) {
       if (!dot.fadingOut) return;
+      if (elapsed < textHideDuration) return; // prevent fading during first 5 seconds
       dot.alpha -= 0.02;
       if (dot.alpha <= 0) {
         dot.x = Math.random() * width;
@@ -335,15 +341,17 @@
 
     function draw() {
       ctx.clearRect(0, 0, width, height);
-      const textRect = getTextRect();
       const elapsed = performance.now() - animationStartTime;
 
+      if (elapsed > textHideDuration) {
+        document.getElementById('centerText').classList.add('hidden');
+      }
+
       const currentConnections = [];
-      if (elapsed > textHoldDuration) {
+      if (elapsed > 3000) {
         handleDotCollisions();
         attractDots();
-        for (let i = 0; i < dots.length; i++) {
-          const dot = dots[i];
+        for (let dot of dots) {
           if (!dot.fadingOut) {
             dot.x += dot.vx; dot.y += dot.vy;
             let bounced = false;
@@ -353,10 +361,10 @@
             if (dot.y > height) { dot.y = height; dot.vy = -Math.abs(dot.vy); bounced = true; }
             if (bounced) recordBounce(dot);
             bounceFromCursor(dot);
-            bounceFromRect(dot, textRect);
+            bounceFromRect(dot, getTextRect());
             enforceMinSpeed(dot);
           }
-          fadeOutAndRespawn(dot);
+          fadeOutAndRespawn(dot, elapsed);
         }
 
         for (let i = 0; i < dots.length; i++) {
@@ -368,9 +376,7 @@
             const dx = dot.x - other.x;
             const dy = dot.y - other.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist <= maxConnectDist) {
-              neighbors.push({ idx: j, dist });
-            }
+            if (dist <= maxConnectDist) neighbors.push({ idx: j, dist });
           }
           neighbors.sort((a, b) => a.dist - b.dist).slice(0, 4)
             .forEach(n => currentConnections.push([i, n.idx]));
