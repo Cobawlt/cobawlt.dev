@@ -66,24 +66,29 @@
     const TEXT = "cobawlt.dev";
     let textPositions = [];
 
-    let intro = true; // First 5 sec no physics
+    let intro = true; 
 
     function getTextPositions() {
       const tempCanvas = document.createElement('canvas');
       const tempCtx = tempCanvas.getContext('2d');
-      tempCanvas.width = width;
-      tempCanvas.height = height;
+      const scale = window.devicePixelRatio || 1;
+
+      tempCanvas.width = width * scale;
+      tempCanvas.height = height * scale;
+      tempCtx.scale(scale, scale); 
+      tempCtx.clearRect(0, 0, width, height);
       tempCtx.font = `bold ${FONT_SIZE}px Arial`;
       tempCtx.textAlign = 'center';
       tempCtx.textBaseline = 'middle';
       tempCtx.fillStyle = 'white';
       tempCtx.fillText(TEXT, width / 2, height / 2);
+
       const imgData = tempCtx.getImageData(0, 0, width, height);
       const positions = [];
       for (let y = 0; y < height; y += 6) {
         for (let x = 0; x < width; x += 6) {
           const idx = (y * width + x) * 4;
-          if (imgData.data[idx + 3] > 128) { // alpha channel
+          if (imgData.data[idx + 3] > 128) {
             positions.push({ x, y });
           }
         }
@@ -121,7 +126,6 @@
 
     const lineOpacities = new Map();
 
-    // Disable physics for 5 sec
     setTimeout(() => {
       intro = false;
       centerText.style.opacity = 1;
@@ -253,7 +257,6 @@
       }
     }
 
-    // Attraction on click/touch
     let attractPoint = null;
     let attracting = false;
     const attractRadius = 100;
