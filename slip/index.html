@@ -297,9 +297,10 @@ function applyModelTransforms(obj){
   const s = 2.5 / maxDim;
   obj.scale.setScalar(s);
   
-  // Correct model orientation (assuming OBJ is pointing along different axis)
-  obj.rotation.set(0, 0, 0);
-  obj.rotateY(-Math.PI/2); obj.rotateZ(Math.PI/2);
+  // IMPORTANT FIX: Remove initial rotation. The rotation is now controlled solely by 
+  // the slider values initialized in applyDefaultPreset() (in the second script block)
+  // to prevent overriding and allow the sliders to work.
+  obj.rotation.set(0, 0, 0); 
   
   // Attach to sparrow physics pivot so it moves with flight
   obj.position.set(0, 0, 0);
@@ -816,7 +817,7 @@ console.log("Hybrid slipstream prototype loaded. Click canvas to lock pointer fo
 // ============================================================================
 // MODEL TRANSFORM CONTROLS (live rotation, scale, position)
 // ============================================================================
-// CRITICAL FIX: The 'ui' object will now be initialized inside DOMContentLoaded.
+// UI element references - will be populated inside DOMContentLoaded
 let ui = {};
 
 function deg(v){ return v * Math.PI / 180; }
@@ -825,16 +826,24 @@ function rad(v){ return v / Math.PI * 180; }
 // Apply transform values from sliders to the currently-loaded model
 function safeApplyTransform(){
   const m = window.lastLoadedModel; if(!m) return;
+  
+  // Get values from sliders
   const y = deg(Number(ui.rotYaw.value || 0));
   const x = deg(Number(ui.rotPitch.value || 0));
   const z = deg(Number(ui.rotRoll.value || 0));
-  m.rotation.set(x, y, z);
+  
+  // The default values (-90 for pitch/roll) correct the model orientation, 
+  // so we apply the rotation directly based on the slider values (XYZ Euler order)
+  m.rotation.set(x, y, z); 
+
   const s = Number(ui.scaleSlider.value) || 1;
   m.scale.set(s, s, s);
   const px = Number(ui.posX.value) || 0;
   const py = Number(ui.posY.value) || 0;
   const pz = Number(ui.posZ.value) || 0;
   m.position.set(px, py, pz);
+
+  // Update readouts
   if(ui.rotYawVal) ui.rotYawVal.textContent = ui.rotYaw.value + '°';
   if(ui.rotPitchVal) ui.rotPitchVal.textContent = ui.rotPitch.value + '°';
   if(ui.rotRollVal) ui.rotRollVal.textContent = ui.rotRoll.value + '°';
@@ -900,7 +909,7 @@ window.initModelControlsAfterLoad = (obj) => {
 
 // Wire up input handlers for transform sliders
 document.addEventListener('DOMContentLoaded', () => {
-    // 1. CRITICAL: Initialize 'ui' only when the HTML elements are available
+    // 1. CRITICAL FIX: Initialize 'ui' only when the HTML elements are available
     ui.rotYaw = document.getElementById('rotYaw'); 
     ui.rotPitch = document.getElementById('rotPitch');
     ui.rotRoll = document.getElementById('rotRoll');
@@ -937,5 +946,3 @@ document.addEventListener('DOMContentLoaded', () => {
 </script>
 </body>
 </html>
-
-
