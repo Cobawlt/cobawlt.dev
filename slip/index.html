@@ -861,11 +861,11 @@ function tryInitControlsFromModel(m){
 
 // Apply a default transform preset to loaded model
 function applyDefaultPreset(){
-  if(ui.rotYaw) ui.rotYaw.value = '-0';
-  if(ui.rotPitch) ui.rotPitch.value = '-90';
+  if(ui.rotYaw) ui.rotYaw.value = '-90';
+  if(ui.rotPitch) ui.rotPitch.value = '0';
   if(ui.rotRoll) ui.rotRoll.value = '-90';
   if(ui.scaleSlider) ui.scaleSlider.value = '0.04';
-  if(ui.posX) ui.posX.value = '-10.0';
+  if(ui.posX) ui.posX.value = '0.0';
   if(ui.posY) ui.posY.value = '-15.0';
   if(ui.posZ) ui.posZ.value = '-35.5';
   // safeApplyTransform();
@@ -897,6 +897,7 @@ if(ui.resetBtn) ui.resetBtn.addEventListener('click', ()=>{
 </script>
 </body>
 </html>
+
 
 
 
