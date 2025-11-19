@@ -71,8 +71,8 @@
       </div>
       <div style="display:flex;align-items:center;gap:6px">
         <label class="small">Z</label>
-  <input id="posZ" type="range" min="-50" max="20" step="0.1" value="-">
-  <span id="posZVal" class="small">-35.50</span>
+  <input id="posZ" type="range" min="-50" max="20" step="0.1" value="-15">
+  <span id="posZVal" class="small">-15.00</span>
       </div>
     </div>
   </div>
@@ -831,9 +831,9 @@ function safeApplyTransform(){
   m.rotation.set(x, y, z);
   const s = Number(ui.scaleSlider.value) || 1;
   m.scale.set(s, s, s);
-  const px = Number(ui.posX.value) || -5.2;
-  const py = Number(ui.posY.value) || -15;
-  const pz = Number(ui.posZ.value) || -35.5;
+  const px = Number(ui.posX.value) || 0;
+  const py = Number(ui.posY.value) || 0;
+  const pz = Number(ui.posZ.value) || 0;
   m.position.set(px, py, pz);
   if(ui.rotYawVal) ui.rotYawVal.textContent = ui.rotYaw.value + '°';
   if(ui.rotPitchVal) ui.rotPitchVal.textContent = ui.rotPitch.value + '°';
@@ -853,9 +853,9 @@ function tryInitControlsFromModel(m){
   if(ui.rotRoll) ui.rotRoll.value = Math.round(rad(rz));
   const s = (m.scale && m.scale.x) ? m.scale.x : 1;
   if(ui.scaleSlider) ui.scaleSlider.value = Number(s).toFixed(2);
-  if(ui.posX) ui.posX.value = (m.position && m.position.x) ? m.position.x : -5.2;
-  if(ui.posY) ui.posY.value = (m.position && m.position.y) ? m.position.y : -15.0;
-  if(ui.posZ) ui.posZ.value = (m.position && m.position.z) ? m.position.z : -35.5;
+  if(ui.posX) ui.posX.value = (m.position && m.position.x) ? m.position.x : 0;
+  if(ui.posY) ui.posY.value = (m.position && m.position.y) ? m.position.y : 0;
+  if(ui.posZ) ui.posZ.value = (m.position && m.position.z) ? m.position.z : 0;
   safeApplyTransform();
 }
 
@@ -897,7 +897,3 @@ if(ui.resetBtn) ui.resetBtn.addEventListener('click', ()=>{
 </script>
 </body>
 </html>
-
-
-
-
