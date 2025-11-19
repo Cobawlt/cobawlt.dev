@@ -831,8 +831,8 @@ function safeApplyTransform(){
   m.rotation.set(x, y, z);
   const s = Number(ui.scaleSlider.value) || 1;
   m.scale.set(s, s, s);
-  const px = Number(ui.posX.value) || 0;
-  const py = Number(ui.posY.value) || 0;
+  const px = Number(ui.posX.value) || -5.2;
+  const py = Number(ui.posY.value) || -15;
   const pz = Number(ui.posZ.value) || -35.5;
   m.position.set(px, py, pz);
   if(ui.rotYawVal) ui.rotYawVal.textContent = ui.rotYaw.value + '°';
@@ -897,6 +897,7 @@ if(ui.resetBtn) ui.resetBtn.addEventListener('click', ()=>{
 </script>
 </body>
 </html>
+
 
 
 
