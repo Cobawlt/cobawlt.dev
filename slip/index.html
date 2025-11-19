@@ -826,14 +826,14 @@ function rad(v){ return v / Math.PI * 180; }
 function safeApplyTransform(){
   const m = window.lastLoadedModel; if(!m) return;
   const y = deg(Number(ui.rotYaw.value || 0));
-  const x = deg(Number(ui.rotPitch.value || 0));
-  const z = deg(Number(ui.rotRoll.value || 0));
+  const x = deg(Number(ui.rotPitch.value || -90));
+  const z = deg(Number(ui.rotRoll.value || -90));
   m.rotation.set(x, y, z);
   const s = Number(ui.scaleSlider.value) || 1;
   m.scale.set(s, s, s);
-  const px = Number(ui.posX.value) || 0;
+  const px = Number(ui.posX.value) || -2;
   const py = Number(ui.posY.value) || 0;
-  const pz = Number(ui.posZ.value) || 0;
+  const pz = Number(ui.posZ.value) || 30;
   m.position.set(px, py, pz);
   if(ui.rotYawVal) ui.rotYawVal.textContent = ui.rotYaw.value + '°';
   if(ui.rotPitchVal) ui.rotPitchVal.textContent = ui.rotPitch.value + '°';
@@ -856,19 +856,19 @@ function tryInitControlsFromModel(m){
   if(ui.posX) ui.posX.value = (m.position && m.position.x) ? m.position.x : 0;
   if(ui.posY) ui.posY.value = (m.position && m.position.y) ? m.position.y : 0;
   if(ui.posZ) ui.posZ.value = (m.position && m.position.z) ? m.position.z : 0;
-  // safeApplyTransform();
+  safeApplyTransform();
 }
 
 // Apply a default transform preset to loaded model
 function applyDefaultPreset(){
-  if(ui.rotYaw) ui.rotYaw.value = '-90';
+  if(ui.rotYaw) ui.rotYaw.value = '0';
   if(ui.rotPitch) ui.rotPitch.value = '0';
   if(ui.rotRoll) ui.rotRoll.value = '-90';
-  if(ui.scaleSlider) ui.scaleSlider.value = '0.04';
-  if(ui.posX) ui.posX.value = '0.0';
+  if(ui.scaleSlider) ui.scaleSlider.value = '0.08';
+  if(ui.posX) ui.posX.value = '-2.0';
   if(ui.posY) ui.posY.value = '-15.0';
   if(ui.posZ) ui.posZ.value = '-35.5';
-  // safeApplyTransform();
+  safeApplyTransform();
 }
 
 // Capture the loaded model's local basis (forward/up/right) for control mapping
@@ -897,6 +897,7 @@ if(ui.resetBtn) ui.resetBtn.addEventListener('click', ()=>{
 </script>
 </body>
 </html>
+
 
 
 
