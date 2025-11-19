@@ -1,3 +1,4 @@
+
 <!doctype html>
 <html lang="en">
 <head>
@@ -34,7 +35,7 @@
   <div class="param"><label class="small">Gravity</label><input id="gravRange" type="range" min="0" max="50" step="0.1" value="9.81"><span id="gravVal" class="small" style="min-width:48px;text-align:right;display:inline-block;margin-left:8px">9.81</span></div>
 
   <div class="status">Speed: <span id="speed">0</span> m/s • Height: <span id="height">0</span> m • Destabilizers: <span id="destText">OFF</span></div>
-  <div class="status">Pos: <span id="physPosX">0</span>, <span id="physPosY">0</span>, <span id="physPosZ">0</span> • Facing: <span id="facingDir">0, 0, 1</span></div>
+  <div class="status">Pos: <span id="posX">0</span>, <span id="posY">0</span>, <span id="posZ">0</span> • Facing: <span id="facingDir">0, 0, 1</span></div>
   <div style="margin-top:8px;">
     <div style="font-weight:600;color:#032a45;margin-bottom:6px">model control</div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -84,6 +85,7 @@
 <footer> </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
+<!-- Import map needed so JSM loader modules that import from bare specifier 'three' resolve in the browser -->
 <script type="importmap">
   {
     "imports": {
@@ -140,7 +142,7 @@ let BOOST_ACCEL = PHYS.boostAccel, DODGE_IMPULSE = PHYS.dodgeImpulse, GRAVITY = 
     MOUSE_SENS = PHYS.mouseSens, GROUND_ALIGN_DIST = PHYS.groundAlignDist,
     GROUND_ALIGN_SLERP = PHYS.groundAlignSlerp, AIR_STABILIZE_SLERP = PHYS.airStabilizeSlerp,
     DESTABILIZER_RECOVER_DURATION = PHYS.destRecoverDuration,
-    DESTABILIZER_RECOVER_SLERP = PHYS.destRecover_SLERP, SIDE_ALIGN_SPEED = PHYS.sideAlignSpeed,
+    DESTABILIZER_RECOVER_SLERP = PHYS.destRecoverSlerp, SIDE_ALIGN_SPEED = PHYS.sideAlignSpeed,
     SIDE_ALIGN_MIN_SPEED = PHYS.sideAlignMinSpeed, CAMERA_TO_SPARROW_SLERP = PHYS.camToSparrowSlerp,
     DODGE_COOLDOWN = PHYS.dodgeCooldown, SPARROW_PIVOT_FORWARD = 1.5;
 
@@ -297,10 +299,9 @@ function applyModelTransforms(obj){
   const s = 2.5 / maxDim;
   obj.scale.setScalar(s);
   
-  // IMPORTANT FIX: Remove initial rotation. The rotation is now controlled solely by 
-  // the slider values initialized in applyDefaultPreset() (in the second script block)
-  // to prevent overriding and allow the sliders to work.
-  obj.rotation.set(0, 0, 0); 
+  // Correct model orientation (assuming OBJ is pointing along different axis)
+  obj.rotation.set(0, 0, 0);
+  obj.rotateY(-Math.PI/2); obj.rotateZ(Math.PI/2);
   
   // Attach to sparrow physics pivot so it moves with flight
   obj.position.set(0, 0, 0);
@@ -309,20 +310,12 @@ function applyModelTransforms(obj){
   // Hide procedural meshes so only loaded model shows
   if(window.sparrowParts) { for(const k in window.sparrowParts) { try{ window.sparrowParts[k].visible = false; }catch(_){} } }
   
-  // Store reference to loaded model
+  // Store reference and initialize UI controls
   window.lastLoadedModel = obj;
-  
-  // CRASH FIX: Defer model control initialization until the DOM is ready 
-  // and the second script block's functions are available.
-  try { 
-      // Check if the DOMContentLoaded listener has run and set up the initialization function
-      if(typeof window.initModelControlsAfterLoad === 'function') {
-          window.initModelControlsAfterLoad(obj);
-      }
-  } catch(e){
-      console.warn('Deferred model control initialization failed:', e);
-  }
-  
+  try { if(typeof captureModelBasis === 'function') captureModelBasis(obj); } catch(e){}
+  if(typeof applyDefaultPreset === 'function') applyDefaultPreset();
+  if(typeof tryInitControlsFromModel === 'function') tryInitControlsFromModel(obj);
+  if(typeof safeApplyTransform === 'function') safeApplyTransform();
   console.log('Model loaded:', obj);
 }
 
@@ -776,10 +769,10 @@ function animate(){
   speedEl.textContent = vel.length().toFixed(1);
   heightEl.textContent = pos.y.toFixed(1);
   
-  // Updated IDs for the physics position display spans
-  document.getElementById('physPosX').textContent = pos.x.toFixed(2);
-  document.getElementById('physPosY').textContent = pos.y.toFixed(2);
-  document.getElementById('physPosZ').textContent = pos.z.toFixed(2);
+  // Update position and facing direction for debugging
+  document.getElementById('posX').textContent = pos.x.toFixed(2);
+  document.getElementById('posY').textContent = pos.y.toFixed(2);
+  document.getElementById('posZ').textContent = pos.z.toFixed(2);
   const facingVector = new THREE.Vector3(0, 0, 1).applyQuaternion(orientation).normalize();
   document.getElementById('facingDir').textContent = `${facingVector.x.toFixed(2)}, ${facingVector.y.toFixed(2)}, ${facingVector.z.toFixed(2)}`;
 
@@ -812,13 +805,19 @@ window.addEventListener('resize', ()=>{
 // Startup info logged to console
 console.log("Hybrid slipstream prototype loaded. Click canvas to lock pointer for mouse aiming. Shift = destabilizers (hold) -> WASD tilt. Q/E dodge. Space up-thrust. Right-click = boost.");
 </script>
-
 <script>
 // ============================================================================
 // MODEL TRANSFORM CONTROLS (live rotation, scale, position)
 // ============================================================================
-// UI element references - will be populated inside DOMContentLoaded
-let ui = {};
+// UI elements for adjusting loaded model transform
+const ui = {
+  rotYaw: document.getElementById('rotYaw'), rotPitch: document.getElementById('rotPitch'), rotRoll: document.getElementById('rotRoll'),
+  rotYawVal: document.getElementById('rotYawVal'), rotPitchVal: document.getElementById('rotPitchVal'), rotRollVal: document.getElementById('rotRollVal'),
+  scaleSlider: document.getElementById('scaleSlider'), scaleVal: document.getElementById('scaleVal'),
+  posX: document.getElementById('posX'), posY: document.getElementById('posY'), posZ: document.getElementById('posZ'),
+  posXVal: document.getElementById('posXVal'), posYVal: document.getElementById('posYVal'), posZVal: document.getElementById('posZVal'),
+  resetBtn: document.getElementById('resetRot')
+};
 
 function deg(v){ return v * Math.PI / 180; }
 function rad(v){ return v / Math.PI * 180; }
@@ -826,24 +825,16 @@ function rad(v){ return v / Math.PI * 180; }
 // Apply transform values from sliders to the currently-loaded model
 function safeApplyTransform(){
   const m = window.lastLoadedModel; if(!m) return;
-  
-  // Get values from sliders
   const y = deg(Number(ui.rotYaw.value || 0));
   const x = deg(Number(ui.rotPitch.value || 0));
   const z = deg(Number(ui.rotRoll.value || 0));
-  
-  // The default values (-90 for pitch/roll) correct the model orientation, 
-  // so we apply the rotation directly based on the slider values (XYZ Euler order)
-  m.rotation.set(x, y, z); 
-
+  m.rotation.set(x, y, z);
   const s = Number(ui.scaleSlider.value) || 1;
   m.scale.set(s, s, s);
   const px = Number(ui.posX.value) || 0;
   const py = Number(ui.posY.value) || 0;
   const pz = Number(ui.posZ.value) || 0;
   m.position.set(px, py, pz);
-
-  // Update readouts
   if(ui.rotYawVal) ui.rotYawVal.textContent = ui.rotYaw.value + '°';
   if(ui.rotPitchVal) ui.rotPitchVal.textContent = ui.rotPitch.value + '°';
   if(ui.rotRollVal) ui.rotRollVal.textContent = ui.rotRoll.value + '°';
@@ -871,12 +862,12 @@ function tryInitControlsFromModel(m){
 // Apply a default transform preset to loaded model
 function applyDefaultPreset(){
   if(ui.rotYaw) ui.rotYaw.value = '-0';
-  if(ui.rotPitch) ui.rotPitch.value = '-90.0';
-  if(ui.rotRoll) ui.rotRoll.value = '-90.0';
-  if(ui.scaleSlider) ui.scaleSlider.value = '0.11';
-  if(ui.posX) ui.posX.value = '0.6';
-  if(ui.posY) ui.posY.value = '-0.6';
-  if(ui.posZ) ui.posZ.value = '-0.4;
+  if(ui.rotPitch) ui.rotPitch.value = '-90';
+  if(ui.rotRoll) ui.rotRoll.value = '-90';
+  if(ui.scaleSlider) ui.scaleSlider.value = '0.04';
+  if(ui.posX) ui.posX.value = '-5.2';
+  if(ui.posY) ui.posY.value = '-15.0';
+  if(ui.posZ) ui.posZ.value = '-35.5';
   safeApplyTransform();
 }
 
@@ -894,54 +885,14 @@ function captureModelBasis(m){
   }catch(e){ console.warn('captureModelBasis failed', e); }
 }
 
-// Global function to be called from the async model loader in the first script block
-window.initModelControlsAfterLoad = (obj) => {
-    // 1. Capture model basis
-    captureModelBasis(obj);
-    
-    // 2. Apply default preset/transforms
-    applyDefaultPreset();
-    
-    // 3. Initialize sliders to the loaded model's values
-    tryInitControlsFromModel(obj);
-}
-
-
 // Wire up input handlers for transform sliders
-document.addEventListener('DOMContentLoaded', () => {
-    // 1. CRITICAL FIX: Initialize 'ui' only when the HTML elements are available
-    ui.rotYaw = document.getElementById('rotYaw'); 
-    ui.rotPitch = document.getElementById('rotPitch');
-    ui.rotRoll = document.getElementById('rotRoll');
-    ui.rotYawVal = document.getElementById('rotYawVal');
-    ui.rotPitchVal = document.getElementById('rotPitchVal');
-    ui.rotRollVal = document.getElementById('rotRollVal');
-    ui.scaleSlider = document.getElementById('scaleSlider');
-    ui.scaleVal = document.getElementById('scaleVal');
-    ui.posX = document.getElementById('posX');
-    ui.posY = document.getElementById('posY');
-    ui.posZ = document.getElementById('posZ');
-    ui.posXVal = document.getElementById('posXVal');
-    ui.posYVal = document.getElementById('posYVal');
-    ui.posZVal = document.getElementById('posZVal');
-    ui.resetBtn = document.getElementById('resetRot');
+[ui.rotYaw, ui.rotPitch, ui.rotRoll, ui.scaleSlider, ui.posX, ui.posY, ui.posZ].forEach(el=>{ if(el) el.addEventListener('input', safeApplyTransform); });
 
-    // 2. Bind event listeners
-    [ui.rotYaw, ui.rotPitch, ui.rotRoll, ui.scaleSlider, ui.posX, ui.posY, ui.posZ].forEach(el=>{ 
-        if(el) el.addEventListener('input', safeApplyTransform); 
-    });
-
-    // 3. Bind reset button
-    if(ui.resetBtn) ui.resetBtn.addEventListener('click', ()=>{
-      if(ui.rotYaw) ui.rotYaw.value = '0'; if(ui.rotPitch) ui.rotPitch.value = '0'; if(ui.rotRoll) ui.rotRoll.value = '0';
-      if(ui.scaleSlider) ui.scaleSlider.value = '1'; if(ui.posX) ui.posX.value='0'; if(ui.posY) ui.posY.value='0'; if(ui.posZ) ui.posZ.value='0';
-      safeApplyTransform();
-    });
-
-    // 4. If the model is already loaded (it's loaded async), initialize the controls now.
-    if(window.lastLoadedModel) {
-        window.initModelControlsAfterLoad(window.lastLoadedModel);
-    }
+// Reset transform button: return sliders to defaults
+if(ui.resetBtn) ui.resetBtn.addEventListener('click', ()=>{
+  if(ui.rotYaw) ui.rotYaw.value = '0'; if(ui.rotPitch) ui.rotPitch.value = '0'; if(ui.rotRoll) ui.rotRoll.value = '0';
+  if(ui.scaleSlider) ui.scaleSlider.value = '1'; if(ui.posX) ui.posX.value='0'; if(ui.posY) ui.posY.value='0'; if(ui.posZ) ui.posZ.value='0';
+  safeApplyTransform();
 });
 </script>
 </body>
