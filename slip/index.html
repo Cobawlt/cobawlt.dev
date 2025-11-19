@@ -1,4 +1,3 @@
-
 <!doctype html>
 <html lang="en">
 <head>
@@ -35,7 +34,7 @@
   <div class="param"><label class="small">Gravity</label><input id="gravRange" type="range" min="0" max="50" step="0.1" value="9.81"><span id="gravVal" class="small" style="min-width:48px;text-align:right;display:inline-block;margin-left:8px">9.81</span></div>
 
   <div class="status">Speed: <span id="speed">0</span> m/s • Height: <span id="height">0</span> m • Destabilizers: <span id="destText">OFF</span></div>
-  <div class="status">Pos: <span id="posX">0</span>, <span id="posY">0</span>, <span id="posZ">0</span> • Facing: <span id="facingDir">0, 0, 1</span></div>
+  <div class="status">Pos: <span id="worldPosX">0</span>, <span id="worldPosY">0</span>, <span id="worldPosZ">0</span> • Facing: <span id="facingDir">0, 0, 1</span></div>
   <div style="margin-top:8px;">
     <div style="font-weight:600;color:#032a45;margin-bottom:6px">model control</div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -61,20 +60,20 @@
       </div>
       <div style="display:flex;align-items:center;gap:6px">
         <label class="small">X</label>
-  <input id="posX" type="range" min="-100" max="100" step="0.01" value="-0.6">
+  <input id="controlPosX" type="range" min="-100" max="100" step="0.01" value="-0.6">
   <span id="posXVal" class="small">-0.60</span>
       </div>
       <div style="display:flex;align-items:center;gap:6px">
         <label class="small">Y</label>
-  <input id="posY" type="range" min="-20" max="20" step="0.1" value="-3.25">
+  <input id="controlPosY" type="range" min="-20" max="20" step="0.1" value="-3.25">
   <span id="posYVal" class="small">-3.25</span>
       </div>
       <div style="display:flex;align-items:center;gap:6px">
         <label class="small">Z</label>
-  <input id="posZ" type="range" min="-50" max="20" step="0.1" value="-15">
+  <input id="controlPosZ" type="range" min="-50" max="20" step="0.1" value="-15">
   <span id="posZVal" class="small">-15.00</span>
       </div>
-    </div>
+      </div>
   </div>
 </div>
 <div id="loadStatus" style="position: absolute; left:12px; bottom:12px; background: rgba(255,255,255,0.9); padding:8px; border-radius:6px; font-size:12px; color:#022;">Model: checking...</div>
@@ -85,7 +84,6 @@
 <footer> </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
-<!-- Import map needed so JSM loader modules that import from bare specifier 'three' resolve in the browser -->
 <script type="importmap">
   {
     "imports": {
@@ -411,7 +409,7 @@ canvas.addEventListener('click', ()=> {
 });
 
 // Prevent context menu on canvas (right-click reserved for boost)
-canvas.addEventListener('contextmenu', (e)=> { e.preventDefault(); });
+canvas.addEventListener('contextmenu', (e)=>{ e.preventDefault(); });
 
 // Right mouse (button 2) for boost
 canvas.addEventListener('mousedown', (e)=>{ if(e.button === 2){ input.boost = true; e.preventDefault(); } });
@@ -763,16 +761,21 @@ function animate(){
   camera.up.set(0, 1, 0);
   
   // Camera always looks at sparrow (camera direction influences where sparrow aims)
-  camera.lookAt(pos);
+  // MODIFICATION: Skip camera.lookAt(pos) when destabilizers are active to fix camera view
+  if(!destabilizers){
+    camera.lookAt(pos);
+  }
+  // ========== END CAMERA FOLLOW & ORBIT ==========
+
 
   // Update UI displays
   speedEl.textContent = vel.length().toFixed(1);
   heightEl.textContent = pos.y.toFixed(1);
   
   // Update position and facing direction for debugging
-  document.getElementById('posX').textContent = pos.x.toFixed(2);
-  document.getElementById('posY').textContent = pos.y.toFixed(2);
-  document.getElementById('posZ').textContent = pos.z.toFixed(2);
+  document.getElementById('worldPosX').textContent = pos.x.toFixed(2);
+  document.getElementById('worldPosY').textContent = pos.y.toFixed(2);
+  document.getElementById('worldPosZ').textContent = pos.z.toFixed(2);
   const facingVector = new THREE.Vector3(0, 0, 1).applyQuaternion(orientation).normalize();
   document.getElementById('facingDir').textContent = `${facingVector.x.toFixed(2)}, ${facingVector.y.toFixed(2)}, ${facingVector.z.toFixed(2)}`;
 
@@ -780,90 +783,108 @@ function animate(){
 }
 
 // ============================================================================
-// INITIALIZATION & STARTUP
+// WINDOW RESIZE HANDLER (keeps aspect ratio correct)
 // ============================================================================
-// Initialize sliders from current tuning values
-document.getElementById('boostRange').value = BOOST_ACCEL;
-document.getElementById('dodgeRange').value = DODGE_IMPULSE;
-document.getElementById('gravRange').value = GRAVITY;
-// Update display readouts
-if(typeof updateBoost === 'function') updateBoost(BOOST_ACCEL);
-if(typeof updateDodge === 'function') updateDodge(DODGE_IMPULSE);
-if(typeof updateGrav === 'function') updateGrav(GRAVITY);
-
-// Start main loop
-animate();
-console.log('animate started'); if(statusInit) statusInit.textContent = 'Model: running';
-
-// Window resize handler
-window.addEventListener('resize', ()=>{
-  renderer.setSize(window.innerWidth, window.innerHeight);
+function onResize(){
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
-});
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+window.addEventListener('resize', onResize);
 
-// Startup info logged to console
-console.log("Hybrid slipstream prototype loaded. Click canvas to lock pointer for mouse aiming. Shift = destabilizers (hold) -> WASD tilt. Q/E dodge. Space up-thrust. Right-click = boost.");
-</script>
-<script>
 // ============================================================================
 // MODEL TRANSFORM CONTROLS (live rotation, scale, position)
 // ============================================================================
-// UI elements for adjusting loaded model transform
 const ui = {
-  rotYaw: document.getElementById('rotYaw'), rotPitch: document.getElementById('rotPitch'), rotRoll: document.getElementById('rotRoll'),
-  rotYawVal: document.getElementById('rotYawVal'), rotPitchVal: document.getElementById('rotPitchVal'), rotRollVal: document.getElementById('rotRollVal'),
-  scaleSlider: document.getElementById('scaleSlider'), scaleVal: document.getElementById('scaleVal'),
-  posX: document.getElementById('posX'), posY: document.getElementById('posY'), posZ: document.getElementById('posZ'),
-  posXVal: document.getElementById('posXVal'), posYVal: document.getElementById('posYVal'), posZVal: document.getElementById('posZVal'),
-  resetBtn: document.getElementById('resetRot')
+  rotYaw: document.getElementById('rotYaw'),
+  rotPitch: document.getElementById('rotPitch'),
+  rotRoll: document.getElementById('rotRoll'),
+  scaleSlider: document.getElementById('scaleSlider'),
+  // FIX: Using new IDs for control sliders to avoid conflict with status spans
+  posX: document.getElementById('controlPosX'), 
+  posY: document.getElementById('controlPosY'),
+  posZ: document.getElementById('controlPosZ'),
+  rotYawVal: document.getElementById('rotYawVal'),
+  rotPitchVal: document.getElementById('rotPitchVal'),
+  rotRollVal: document.getElementById('rotRollVal'),
+  scaleVal: document.getElementById('scaleVal'),
+  posXVal: document.getElementById('posXVal'),
+  posYVal: document.getElementById('posYVal'),
+  posZVal: document.getElementById('posZVal'),
 };
 
-function deg(v){ return v * Math.PI / 180; }
-function rad(v){ return v / Math.PI * 180; }
-
-// Apply transform values from sliders to the currently-loaded model
+// Apply transform values from sliders to the loaded model
 function safeApplyTransform(){
-  const m = window.lastLoadedModel; if(!m) return;
-  const y = deg(Number(ui.rotYaw.value || 0));
-  const x = deg(Number(ui.rotPitch.value || 0));
-  const z = deg(Number(ui.rotRoll.value || 0));
-  m.rotation.set(x, y, z);
-  const s = Number(ui.scaleSlider.value) || 1;
-  m.scale.set(s, s, s);
-  const px = Number(ui.posX.value) || 0;
-  const py = Number(ui.posY.value) || 0;
-  const pz = Number(ui.posZ.value) || 0;
-  m.position.set(px, py, pz);
-  if(ui.rotYawVal) ui.rotYawVal.textContent = ui.rotYaw.value + '°';
-  if(ui.rotPitchVal) ui.rotPitchVal.textContent = ui.rotPitch.value + '°';
-  if(ui.rotRollVal) ui.rotRollVal.textContent = ui.rotRoll.value + '°';
-  if(ui.scaleVal) ui.scaleVal.textContent = Number(ui.scaleSlider.value).toFixed(2) + 'x';
-  if(ui.posXVal) ui.posXVal.textContent = Number(ui.posX.value).toFixed(2);
-  if(ui.posYVal) ui.posYVal.textContent = Number(ui.posY.value).toFixed(2);
-  if(ui.posZVal) ui.posZVal.textContent = Number(ui.posZ.value).toFixed(2);
+  try{
+    if(!window.lastLoadedModel) return;
+    const m = window.lastLoadedModel;
+    
+    // Rotation (degrees to radians)
+    const yaw = parseFloat(ui.rotYaw.value) * Math.PI / 180;
+    const pitch = parseFloat(ui.rotPitch.value) * Math.PI / 180;
+    const roll = parseFloat(ui.rotRoll.value) * Math.PI / 180;
+    
+    // Apply local rotation (adjust based on model's initial transform if needed)
+    m.rotation.set(0, 0, 0); // Reset base rotation
+    m.rotateY(-Math.PI/2); m.rotateZ(Math.PI/2); // Re-apply base correction
+    
+    // Now apply user rotation
+    m.rotateY(yaw);
+    m.rotateX(pitch);
+    m.rotateZ(roll);
+    
+    // Scale
+    const scale = parseFloat(ui.scaleSlider.value);
+    m.scale.setScalar(scale);
+    
+    // Position (Local offset within the sparrow physics group)
+    // FIX: ui.posX/Y/Z now correctly point to the input elements
+    m.position.x = parseFloat(ui.posX.value); 
+    m.position.y = parseFloat(ui.posY.value);
+    m.position.z = parseFloat(ui.posZ.value);
+    
+    // Update UI labels
+    ui.rotYawVal.textContent = `${ui.rotYaw.value}°`;
+    ui.rotPitchVal.textContent = `${ui.rotPitch.value}°`;
+    ui.rotRollVal.textContent = `${ui.rotRoll.value}°`;
+    ui.scaleVal.textContent = `${scale.toFixed(2)}x`;
+    ui.posXVal.textContent = m.position.x.toFixed(2);
+    ui.posYVal.textContent = m.position.y.toFixed(2);
+    ui.posZVal.textContent = m.position.z.toFixed(2);
+    
+  }catch(e){
+    console.warn('safeApplyTransform failed', e);
+  }
 }
 
-// Initialize sliders from a loaded model's current transform
-function tryInitControlsFromModel(m){
-  if(!m) return;
-  const rx = m.rotation.x || 0, ry = m.rotation.y || 0, rz = m.rotation.z || 0;
-  if(ui.rotYaw) ui.rotYaw.value = Math.round(rad(ry));
-  if(ui.rotPitch) ui.rotPitch.value = Math.round(rad(rx));
-  if(ui.rotRoll) ui.rotRoll.value = Math.round(rad(rz));
-  const s = (m.scale && m.scale.x) ? m.scale.x : 1;
-  if(ui.scaleSlider) ui.scaleSlider.value = Number(s).toFixed(2);
-  if(ui.posX) ui.posX.value = (m.position && m.position.x) ? m.position.x : 0;
-  if(ui.posY) ui.posY.value = (m.position && m.position.y) ? m.position.y : 0;
-  if(ui.posZ) ui.posZ.value = (m.position && m.position.z) ? m.position.z : 0;
-  safeApplyTransform();
-}
-
-// Apply a default transform preset to loaded model
+// Set default slider values based on a successful load
 function applyDefaultPreset(){
-  if(ui.rotYaw) ui.rotYaw.value = '-0';
-  if(ui.rotPitch) ui.rotPitch.value = '-90';
-  if(ui.rotRoll) ui.rotRoll.value = '-90';
+  if(window.lastLoadedModel && ui.rotPitch){
+    // Example: A common adjustment after loading an OBJ
+    if(ui.rotYaw) ui.rotYaw.value = '0';
+    if(ui.rotPitch) ui.rotPitch.value = '0';
+    if(ui.rotRoll) ui.rotRoll.value = '0';
+    if(ui.scaleSlider) ui.scaleSlider.value = '1.0';
+    if(ui.posX) ui.posX.value = '0';
+    if(ui.posY) ui.posY.value = '0';
+    if(ui.posZ) ui.posZ.value = '0';
+    // If the model is not the default Sparrow.obj/mtl, these values might need adjustment
+  } else if (!window.lastLoadedModel && ui.rotPitch) {
+    // For the procedural sparrow:
+    if(ui.rotYaw) ui.rotYaw.value = '0';
+    if(ui.rotPitch) ui.rotPitch.value = '0';
+    if(ui.rotRoll) ui.rotRoll.value = '0';
+    if(ui.scaleSlider) ui.scaleSlider.value = '1.0';
+    if(ui.posX) ui.posX.value = '0';
+    if(ui.posY) ui.posY.value = '0';
+    if(ui.posZ) ui.posZ.value = SPARROW_PIVOT_FORWARD.toFixed(2); // Match visual offset
+  }
+  
+  // Hardcoded values from the original snippet (if intended for model placement)
+  // FIX: These now correctly set the value on the input elements
+  if(ui.rotYaw) ui.rotYaw.value = '0';
+  if(ui.rotPitch) ui.rotPitch.value = '0';
+  if(ui.rotRoll) ui.rotRoll.value = '0';
   if(ui.scaleSlider) ui.scaleSlider.value = '0.04';
   if(ui.posX) ui.posX.value = '-5.2';
   if(ui.posY) ui.posY.value = '-15.0';
@@ -888,12 +909,11 @@ function captureModelBasis(m){
 // Wire up input handlers for transform sliders
 [ui.rotYaw, ui.rotPitch, ui.rotRoll, ui.scaleSlider, ui.posX, ui.posY, ui.posZ].forEach(el=>{ if(el) el.addEventListener('input', safeApplyTransform); });
 
-// Reset transform button: return sliders to defaults
-if(ui.resetBtn) ui.resetBtn.addEventListener('click', ()=>{
-  if(ui.rotYaw) ui.rotYaw.value = '0'; if(ui.rotPitch) ui.rotPitch.value = '0'; if(ui.rotRoll) ui.rotRoll.value = '0';
-  if(ui.scaleSlider) ui.scaleSlider.value = '1'; if(ui.posX) ui.posX.value='0'; if(ui.posY) ui.posY.value='0'; if(ui.posZ) ui.posZ.value='0';
-  safeApplyTransform();
-});
+// Fallback/Init call for default model when no external model is loaded
+if(!window.lastLoadedModel) applyDefaultPreset();
+
+// Start the animation loop
+animate();
 </script>
 </body>
 </html>
