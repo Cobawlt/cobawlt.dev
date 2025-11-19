@@ -833,7 +833,7 @@ function safeApplyTransform(){
   m.scale.set(s, s, s);
   const px = Number(ui.posX.value) || 0;
   const py = Number(ui.posY.value) || 0;
-  const pz = Number(ui.posZ.value) || 0;
+  const pz = Number(ui.posZ.value) || -35.5;
   m.position.set(px, py, pz);
   if(ui.rotYawVal) ui.rotYawVal.textContent = ui.rotYaw.value + '°';
   if(ui.rotPitchVal) ui.rotPitchVal.textContent = ui.rotPitch.value + '°';
@@ -897,3 +897,4 @@ if(ui.resetBtn) ui.resetBtn.addEventListener('click', ()=>{
 </script>
 </body>
 </html>
+
