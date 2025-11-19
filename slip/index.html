@@ -856,7 +856,7 @@ function tryInitControlsFromModel(m){
   if(ui.posX) ui.posX.value = (m.position && m.position.x) ? m.position.x : 0;
   if(ui.posY) ui.posY.value = (m.position && m.position.y) ? m.position.y : 0;
   if(ui.posZ) ui.posZ.value = (m.position && m.position.z) ? m.position.z : 0;
-  safeApplyTransform();
+  // safeApplyTransform();
 }
 
 // Apply a default transform preset to loaded model
@@ -868,7 +868,7 @@ function applyDefaultPreset(){
   if(ui.posX) ui.posX.value = '-5.2';
   if(ui.posY) ui.posY.value = '-15.0';
   if(ui.posZ) ui.posZ.value = '-35.5';
-  safeApplyTransform();
+  // safeApplyTransform();
 }
 
 // Capture the loaded model's local basis (forward/up/right) for control mapping
@@ -897,3 +897,4 @@ if(ui.resetBtn) ui.resetBtn.addEventListener('click', ()=>{
 </script>
 </body>
 </html>
+
