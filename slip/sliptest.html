@@ -1,0 +1,899 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>red roof</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  html,body{height:100%;margin:0;background:#bfefff;overflow:hidden;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
+  #overlay{
+    position: absolute;left:12px;top:12px;color:#021b2b;
+    background:linear-gradient(180deg, rgba(255,255,255,0.95), rgba(255,255,255,0.82));
+    padding:12px;border-radius:8px;font-size:13px;backdrop-filter: blur(4px);
+    max-width:480px;box-shadow:0 8px 28px rgba(0,0,0,0.12)
+  }
+  #hint{opacity:.95;margin-top:8px;font-size:13px;color:#063d5b;}
+  .small{font-size:12px;color:#052a3a;}
+  /* make the three.js canvas fill the window and sit behind UI overlays          python -m http.server 8000        */ 
+  #canvas{position:fixed;left:0;top:0;width:100%;height:100%;display:block;z-index:0}
+  footer{position: absolute;right:12px;bottom:12px;color:#073b5a;font-size:12px}
+  .param{display:flex;gap:6px;align-items:center;margin-top:8px}
+  .param input[type=range]{flex:1}
+  .big{font-weight:700;color:#032a45}
+  .status { margin-top:8px; font-size:12px; color:#052a45; }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="overlay">
+  <div class="big">i cant help but notice cobwalt is flying</div>
+  <div id="keys" class="small">
+  </div>
+  <div class="param"><label class="small">Boost strength (Right click)</label><input id="boostRange" type="range" min="0" max="200" step="1" value="60"><span id="boostVal" class="small" style="min-width:48px;text-align:right;display:inline-block;margin-left:8px">60</span></div>
+  <div class="param"><label class="small">dodge strength (Q/E)</label><input id="dodgeRange" type="range" min="0" max="200" step="1" value="100"><span id="dodgeVal" class="small" style="min-width:48px;text-align:right;display:inline-block;margin-left:8px">100</span></div>
+  <div class="param"><label class="small">Gravity</label><input id="gravRange" type="range" min="0" max="50" step="0.1" value="9.81"><span id="gravVal" class="small" style="min-width:48px;text-align:right;display:inline-block;margin-left:8px">9.81</span></div>
+
+  <div class="status">Speed: <span id="speed">0</span> m/s • Height: <span id="height">0</span> m • Destabilizers: <span id="destText">OFF</span></div>
+  <div class="status">Pos: <span id="posX">0</span>, <span id="posY">0</span>, <span id="posZ">0</span> • Facing: <span id="facingDir">0, 0, 1</span></div>
+  <div style="margin-top:8px;">
+    <div style="font-weight:600;color:#032a45;margin-bottom:6px">model control</div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:6px">
+        <label class="small">Yaw</label>
+  <input id="rotYaw" type="range" min="-180" max="180" value="0">
+        <span id="rotYawVal" class="small">0°</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <label class="small">Pitch</label>
+  <input id="rotPitch" type="range" min="-180" max="180" value="-90">
+        <span id="rotPitchVal" class="small">0°</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <label class="small">Roll</label>
+  <input id="rotRoll" type="range" min="-180" max="180" value="-90">
+        <span id="rotRollVal" class="small">0°</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <label class="small">Scale</label>
+  <input id="scaleSlider" type="range" min="0.01" max="5" step="0.01" value="0.01">
+  <span id="scaleVal" class="small">0.01x</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <label class="small">X</label>
+  <input id="posX" type="range" min="-100" max="100" step="0.01" value="-0.6">
+  <span id="posXVal" class="small">-0.60</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <label class="small">Y</label>
+  <input id="posY" type="range" min="-20" max="20" step="0.1" value="-3.25">
+  <span id="posYVal" class="small">-3.25</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <label class="small">Z</label>
+  <input id="posZ" type="range" min="-50" max="20" step="0.1" value="-15">
+  <span id="posZVal" class="small">-15.00</span>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="loadStatus" style="position: absolute; left:12px; bottom:12px; background: rgba(255,255,255,0.9); padding:8px; border-radius:6px; font-size:12px; color:#022;">Model: checking...</div>
+<div id="loadBig" style="position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.6);color:#fff;padding:12px 18px;border-radius:10px;font-size:15px;display:none;z-index:9999">
+  <div id="loadBigText">Loading...</div>
+  <div style="margin-top:8px;text-align:center"><button id="loadBtn" style="margin-top:6px;padding:6px 12px;border-radius:6px;border:none;cursor:pointer">Load external model</button></div>
+</div>
+<footer> </footer>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
+<!-- Import map needed so JSM loader modules that import from bare specifier 'three' resolve in the browser -->
+<script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.module.js"
+    }
+  }
+</script>
+<script>
+// ============================================================================
+// ERROR HANDLING
+// ============================================================================
+// Global error reporting for debugging — show errors in the on-page status
+window.addEventListener('error', function(e){
+  try{ console.error('Window error:', e.message, e.filename + ':' + e.lineno); }catch(_){ }
+  const el = document.getElementById('loadStatus'); if(el) el.textContent = 'ERROR: ' + (e.message || e.error || 'unknown');
+});
+window.addEventListener('unhandledrejection', function(e){
+  try{ console.error('UnhandledRejection:', e.reason); }catch(_){ }
+  const el = document.getElementById('loadStatus'); if(el) el.textContent = 'ERROR: ' + (e.reason && e.reason.message ? e.reason.message : String(e.reason));
+});
+console.log('script start');
+const statusInit = document.getElementById('loadStatus'); if(statusInit) statusInit.textContent = 'Model: script started';
+
+// ============================================================================
+// PHYSICS & CONTROL CONSTANTS
+// ============================================================================
+// All tunable parameters for flight physics, control responsiveness, and stabilization
+const PHYS = {
+  boostAccel: 100.0,           // Right-click boost acceleration (forward)
+  dodgeImpulse: 40.0,          // Q/E dodge impulse magnitude
+  gravity: 14,                 // Downward acceleration (world units/sec²)
+  upThrust: 36.0,              // Space key upward thrust
+  horizAccel: 42.0,            // WASD horizontal acceleration (when destabilizers OFF)
+  airDrag: 10.0,               // Air resistance damping factor
+  maxSpeed: 200.0,             // Speed limiter cap
+  dodgeCooldown: 0.25,         // Cooldown between dodge impulses (seconds)
+  rollSpeed: Math.PI*1.0,          // Roll rotation speed when tilting (destab mode) (rad/sec)
+  pitchSpeed: Math.PI*1.0,         // Pitch rotation speed when tilting (destab mode) (rad/sec)
+  mouseSens: 0.0022,           // Pointer lock mouse sensitivity
+  groundAlignDist: 1.2,        // Distance from ground to trigger alignment (units)
+  groundAlignSlerp: 0.1,      // Ground alignment slerp factor per frame
+  airStabilizeSlerp: 0.000028,    // Auto-stabilize slerp when destabilizers OFF
+  destRecoverDuration: 100.0,    // Time to slow recovery after destabilizers release (sec)
+  destRecoverSlerp: 0.006,     // Slower slerp during recovery window
+  sideAlignSpeed: 0.0006,        // Side-facing alignment slerp factor (when moving)
+  sideAlignMinSpeed: 0.5,      // Min speed to trigger side-facing alignment
+  camToSparrowSlerp: 1.5      // Sparrow aims to camera when free-cam active
+};
+
+// Mutable globals for UI slider updates — these get modified by slider inputs
+let BOOST_ACCEL = PHYS.boostAccel, DODGE_IMPULSE = PHYS.dodgeImpulse, GRAVITY = PHYS.gravity,
+    UP_THRUST = PHYS.upThrust, HORIZONTAL_ACCEL = PHYS.horizAccel, AIR_DRAG = PHYS.airDrag,
+    MAX_SPEED = PHYS.maxSpeed, ROLL_SPEED = PHYS.rollSpeed, PITCH_SPEED = PHYS.pitchSpeed,
+    MOUSE_SENS = PHYS.mouseSens, GROUND_ALIGN_DIST = PHYS.groundAlignDist,
+    GROUND_ALIGN_SLERP = PHYS.groundAlignSlerp, AIR_STABILIZE_SLERP = PHYS.airStabilizeSlerp,
+    DESTABILIZER_RECOVER_DURATION = PHYS.destRecoverDuration,
+    DESTABILIZER_RECOVER_SLERP = PHYS.destRecoverSlerp, SIDE_ALIGN_SPEED = PHYS.sideAlignSpeed,
+    SIDE_ALIGN_MIN_SPEED = PHYS.sideAlignMinSpeed, CAMERA_TO_SPARROW_SLERP = PHYS.camToSparrowSlerp,
+    DODGE_COOLDOWN = PHYS.dodgeCooldown, SPARROW_PIVOT_FORWARD = 1.5;
+
+// ============================================================================
+// THREE.JS SCENE SETUP
+// ============================================================================
+// Initialize renderer, camera, scene, and lighting
+const canvas = document.getElementById('canvas');
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+console.log('renderer created'); if(statusInit) statusInit.textContent = 'Model: renderer ok';
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xbfefff); // light blue sky
+// expose scene globally for loaders
+window.scene = scene;
+
+// Camera: perspective view with 105° FOV
+const camera = new THREE.PerspectiveCamera(105, window.innerWidth/window.innerHeight, 0.1, 5000);
+camera.position.set(0, 6, 14);
+
+// Lighting: directional (sun-like) + ambient
+const dir = new THREE.DirectionalLight(0xffffff, 1.0);
+dir.position.set(12,30,8);
+scene.add(dir);
+scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+
+// Ground: large red flat plane at y=0
+const floorSize = 10000;
+const floorGeo = new THREE.PlaneGeometry(floorSize, floorSize, 1, 1);
+const floorMat = new THREE.MeshStandardMaterial({color:0xff3d3d, metalness:0.05, roughness:0.9});
+const floor = new THREE.Mesh(floorGeo, floorMat);
+floor.rotation.x = -Math.PI/2;
+floor.position.y = 0;
+scene.add(floor);
+console.log('floor added'); if(statusInit) statusInit.textContent = 'Model: floor added';
+
+// Subtle grid helper for depth perception
+const grid = new THREE.GridHelper(10000, 500, 0xff3d3d, 0xff3d3d);
+grid.position.y = 0.003;
+scene.add(grid);
+console.log('grid added');
+
+// ============================================================================
+// SPARROW MODEL (PROCEDURAL + EXTERNAL)
+// ============================================================================
+// The sparrow consists of a physics pivot group and a visual child group.
+// This allows the rotation/physics center to be offset from the visual mesh.
+
+// Visual meshes group (child): body, wings, and arrow indicator
+const sparrowVisual = new THREE.Group();
+const bodyGeo = new THREE.BoxGeometry(1.6, 0.28, 3.2);
+const bodyMat = new THREE.MeshStandardMaterial({color:0x286fb2, metalness:0.35, roughness:0.25});
+const body = new THREE.Mesh(bodyGeo, bodyMat);
+body.position.set(0,0,0);
+sparrowVisual.add(body);
+
+// Wings: thin horizontal planes angled slightly
+const wingGeo = new THREE.BoxGeometry(0.2, 0.02, 2.6);
+const lw = new THREE.Mesh(wingGeo, bodyMat); lw.position.set(-1.1, -0.02, 0); lw.rotation.x = 0.06; sparrowVisual.add(lw);
+const rw = new THREE.Mesh(wingGeo, bodyMat); rw.position.set(1.1, -0.02, 0); rw.rotation.x = -0.06; sparrowVisual.add(rw);
+
+// Forward indicator: yellow cone that shows which direction the sparrow is pointing
+const arrowGeo = new THREE.ConeGeometry(0.18, 0.6, 10);
+const arrow = new THREE.Mesh(arrowGeo, new THREE.MeshStandardMaterial({color:0xffee77}));
+arrow.rotation.x = Math.PI/2; arrow.position.set(0, 0.18, 1.7); sparrowVisual.add(arrow);
+
+// Physics pivot group (parent): all physics calculations apply to this
+// The visual meshes are offset forward so the rotation pivot is at the rear
+const sparrow = new THREE.Group();
+sparrowVisual.position.set(0, 0, SPARROW_PIVOT_FORWARD);
+sparrow.add(sparrowVisual);
+
+// Position sparrow in world (will be updated by physics each frame)
+sparrow.position.set(0, 6, 0);
+scene.add(sparrow);
+console.log('sparrow added'); if(statusInit) statusInit.textContent = 'Model: sparrow added';
+
+// Store references to procedural meshes so we can hide them when loading external model
+window.sparrowParts = { body: body, leftWing: lw, rightWing: rw, arrow: arrow };
+// Expose physics pivot globally
+window.sparrow = sparrow;
+
+// Ensure procedural sparrow is visible (may have been hidden by previous loads)
+sparrow.visible = true;
+if(window.sparrowParts){ for(const k in window.sparrowParts){ try{ window.sparrowParts[k].visible = true; }catch(_){} } }
+// Clear stale reference from previous model load
+window.lastLoadedModel = window.lastLoadedModel || null;
+
+// ============================================================================
+// UNIFIED MODEL LOADER
+// ============================================================================
+// Attempts to load MTL+OBJ from models/ folder; falls back to OBJ-only if MTL 404s
+// Uses dynamic imports, with fallback to THREE globals if CDN imports unavailable
+async function loadExternalModel(){
+  const status = document.getElementById('loadStatus');
+  try {
+    // Try dynamic import of loaders from CDN first, fall back to THREE globals
+    let MTLLoader, OBJLoader;
+    try {
+      const mod1 = await import('https://cdn.jsdelivr.net/npm/three@0.158.0/examples/jsm/loaders/MTLLoader.js');
+      const mod2 = await import('https://cdn.jsdelivr.net/npm/three@0.158.0/examples/jsm/loaders/OBJLoader.js');
+      MTLLoader = mod1.MTLLoader; OBJLoader = mod2.OBJLoader;
+    } catch(e) {
+      // Fallback: use THREE global loaders if modules not available
+      if(typeof THREE !== 'undefined' && THREE.MTLLoader && THREE.OBJLoader) {
+        MTLLoader = THREE.MTLLoader; OBJLoader = THREE.OBJLoader;
+      } else {
+        throw new Error('Loaders not available');
+      }
+    }
+    
+    status.textContent = 'Model: loading MTL...';
+    const mtl = new MTLLoader(); mtl.setCrossOrigin('');
+    
+    // Try loading MTL; if it fails, fall back to OBJ-only
+    try {
+      const materials = await new Promise((res, rej) => mtl.load('models/Sparrow.mtl', res, null, rej));
+      materials.preload();
+      status.textContent = 'Model: loading OBJ...';
+      const obj = await new Promise((res, rej) => {
+        const objL = new OBJLoader(); objL.setMaterials(materials);
+        objL.load('models/Sparrow.obj', res, null, rej);
+      });
+      applyModelTransforms(obj);
+      status.textContent = 'Model: good :)';
+    } catch(e) {
+      // MTL load failed: attempt OBJ-only (no materials)
+      console.warn('MTL failed, loading OBJ-only:', e.message);
+      status.textContent = 'Model: loading OBJ-only...';
+      const obj = await new Promise((res, rej) => {
+        const objL = new OBJLoader();
+        objL.load('models/Sparrow.obj', res, null, rej);
+      });
+      applyModelTransforms(obj);
+      status.textContent = 'Model: loaded (no materials)';
+    }
+  } catch(e) {
+    console.error('Model load failed:', e);
+    status.textContent = 'Model: load failed - ' + e.message;
+  }
+}
+
+// Apply transforms and attach loaded model to scene
+function applyModelTransforms(obj){
+  // Setup mesh properties for shadows
+  obj.traverse(c => { if(c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
+  
+  // Auto-scale model based on bounding box
+  const box = new THREE.Box3().setFromObject(obj);
+  const size = new THREE.Vector3(); box.getSize(size);
+  const maxDim = Math.max(size.x, size.y, size.z) || 1;
+  const s = 2.5 / maxDim;
+  obj.scale.setScalar(s);
+  
+  // Correct model orientation (assuming OBJ is pointing along different axis)
+  obj.rotation.set(0, 0, 0);
+  obj.rotateY(-Math.PI/2); obj.rotateZ(Math.PI/2);
+  
+  // Attach to sparrow physics pivot so it moves with flight
+  obj.position.set(0, 0, 0);
+  window.sparrow.add(obj);
+  
+  // Hide procedural meshes so only loaded model shows
+  if(window.sparrowParts) { for(const k in window.sparrowParts) { try{ window.sparrowParts[k].visible = false; }catch(_){} } }
+  
+  // Store reference and initialize UI controls
+  window.lastLoadedModel = obj;
+  try { if(typeof captureModelBasis === 'function') captureModelBasis(obj); } catch(e){}
+  if(typeof applyDefaultPreset === 'function') applyDefaultPreset();
+  if(typeof tryInitControlsFromModel === 'function') tryInitControlsFromModel(obj);
+  if(typeof safeApplyTransform === 'function') safeApplyTransform();
+  console.log('Model loaded:', obj);
+}
+
+// Initiate async model load
+loadExternalModel().catch(e => console.error('Model loader exception:', e));
+
+// ============================================================================
+// PHYSICS STATE
+// ============================================================================
+// Position, velocity, orientation tracked each frame
+let pos = sparrow.position.clone();
+let vel = new THREE.Vector3(0,0,0);
+let orientation = sparrow.quaternion.clone();
+let lastDodgeTime = -999;
+
+// Destabilizer (Shift-hold) mode state and recovery tracking
+let destabilizers = false;
+const destText = document.getElementById('destText');
+let destReleasedAt = null; // Timestamp when destabilizers released (used for slow recovery window)
+
+// Camera follow parameters — camera orbits behind sparrow with smooth follow
+let cameraDistance = 15;      // Distance from sparrow to camera
+let cameraPitch = 0.5;        // Up/down angle (vertical, relative to sparrow's forward)
+let cameraYaw = 0;            // Left/right angle (horizontal, relative to sparrow's forward)
+let isOrbiting = false;       // True when middle-mouse dragging to orbit
+let lastOrbitX = 0, lastOrbitY = 0;
+let cameraFollowSpeed = 0.02; // Lerp speed for camera follow-with-delay (0=instant, 1=snappy)
+
+// ============================================================================
+// INPUT HANDLING
+// ============================================================================
+// Keyboard input state tracker
+const input = {
+  boost:false,    // Right-click: continuous forward acceleration
+  upThrust:false, // Space: upward acceleration
+  moveF: false,   // W: forward (or pitch nose down in destab mode)
+  moveB: false,   // S: backward (or pitch nose up in destab mode)
+  moveL: false,   // A: left (or roll right in destab mode)
+  moveR: false,   // D: right (or roll left in destab mode)
+  destHold: false,// Shift: hold to activate destabilizers
+  tiltF: false,   // W tilt when destabilizers active
+  tiltB: false,   // S tilt when destabilizers active
+  tiltL: false,   // A tilt when destabilizers active
+  tiltR: false,   // D tilt when destabilizers active
+};
+
+// Key down handlers: map keyboard codes to input state updates
+const keyDownMap = {
+  'KeyW': ()=> { input.moveF = true; if(destabilizers) input.tiltF = true; },
+  'KeyS': ()=> { input.moveB = true; if(destabilizers) input.tiltB = true; },
+  'KeyD': ()=> { input.moveL = true; if(destabilizers) input.tiltL = true; },
+  'KeyA': ()=> { input.moveR = true; if(destabilizers) input.tiltR = true; },
+  'ShiftLeft': ()=> { destabilizers = true; destText.textContent = 'ON'; destReleasedAt = null; },
+  'ShiftRight': ()=> { destabilizers = true; destText.textContent = 'ON'; destReleasedAt = null; },
+  'Space': ()=> input.upThrust = true,
+  'KeyE': ()=> triggerDodge('left'),   // Dodge left (strafe left)
+  'KeyQ': ()=> triggerDodge('right')   // Dodge right (strafe right)
+};
+
+// Key up handlers: release input state
+const keyUpMap = {
+  'KeyW': ()=> { input.moveF = false; input.tiltF = false; },
+  'KeyS': ()=> { input.moveB = false; input.tiltB = false; },
+  'KeyD': ()=> { input.moveL = false; input.tiltL = false; },
+  'KeyA': ()=> { input.moveR = false; input.tiltR = false; },
+  'ShiftLeft': ()=> { destabilizers = false; destText.textContent = 'OFF'; resetTiltInputs(); destReleasedAt = performance.now()/1000; },
+  'ShiftRight': ()=> { destabilizers = false; destText.textContent = 'OFF'; resetTiltInputs(); destReleasedAt = performance.now()/1000; },
+  'Space': ()=> input.upThrust = false
+};
+
+// Reset all tilt inputs (used when destabilizers released)
+function resetTiltInputs(){
+  input.tiltF = input.tiltB = input.tiltL = input.tiltR = false;
+}
+
+// Wire up keyboard listeners
+window.addEventListener('keydown', (e)=> {
+  if(keyDownMap[e.code]) { e.preventDefault(); keyDownMap[e.code](); }
+});
+window.addEventListener('keyup', (e)=> {
+  if(keyUpMap[e.code]) { e.preventDefault(); keyUpMap[e.code](); }
+});
+
+// ============================================================================
+// MOUSE & POINTER INPUT
+// ============================================================================
+// Pointer lock aiming: accumulate mouse delta each frame
+let pointerDelta = {x:0,y:0};
+
+// Click canvas to request pointer lock
+canvas.addEventListener('click', ()=> {
+  if(document.pointerLockElement !== canvas) canvas.requestPointerLock?.();
+});
+
+// Prevent context menu on canvas (right-click reserved for boost)
+canvas.addEventListener('contextmenu', (e)=> { e.preventDefault(); });
+
+// Right mouse (button 2) for boost
+canvas.addEventListener('mousedown', (e)=>{ if(e.button === 2){ input.boost = true; e.preventDefault(); } });
+
+// Middle mouse (button 1) drag to orbit camera when not pointer-locked
+canvas.addEventListener('mousedown', (e)=>{
+  if(document.pointerLockElement === canvas) return;
+  if(e.button === 1){ isOrbiting = true; lastOrbitX = e.clientX; lastOrbitY = e.clientY; e.preventDefault(); }
+});
+
+// Right mouse (button 2) for boost
+// Global mouse up handlers (catch even if pointer leaves canvas)
+document.addEventListener('mouseup', (e)=>{ if(e.button === 2){ input.boost = false; } });
+window.addEventListener('mouseup', (e)=>{ if(e.button === 1) { isOrbiting = false; } });
+
+// Orbit camera with middle-mouse drag
+window.addEventListener('mousemove', (e)=>{
+  if(document.pointerLockElement === canvas) return;
+  if(!isOrbiting) return;
+  const dx = e.clientX - lastOrbitX; const dy = e.clientY - lastOrbitY;
+  lastOrbitX = e.clientX; lastOrbitY = e.clientY;
+  cameraYaw -= dx * 0.005;
+  cameraPitch += dy * 0.005;
+  // Clamp pitch to prevent camera flipping upside down (±60°)
+  const limit = Math.PI / 3;
+  if(cameraPitch > limit) cameraPitch = limit;
+  if(cameraPitch < -limit) cameraPitch = -limit;
+});
+
+// Wheel zoom
+canvas.addEventListener('wheel', (e)=>{
+  if(document.pointerLockElement === canvas) return;
+  cameraDistance += e.deltaY * 0.02;
+  cameraDistance = Math.max(3, Math.min(80, cameraDistance));
+  e.preventDefault();
+}, {passive:false});
+
+// Pointer lock change listener
+document.addEventListener('pointerlockchange', ()=> {
+  if(document.pointerLockElement === canvas) {
+    document.addEventListener('mousemove', onPointerMove);
+  } else {
+    document.removeEventListener('mousemove', onPointerMove);
+  }
+});
+
+// Accumulate pointer delta when locked
+function onPointerMove(e){
+  pointerDelta.x += e.movementX;
+  pointerDelta.y += e.movementY;
+}
+
+// Fallback mouse position tracking (when pointer not locked)
+let mouseNoLock = {x:0,y:0};
+let prevMouseNoLock = {x:0,y:0};  // Track previous position to compute delta
+window.addEventListener('mousemove', (ev)=>{
+  if(document.pointerLockElement !== canvas){
+    const newX = (ev.clientX / window.innerWidth) * 2 - 1;
+    const newY = (ev.clientY / window.innerHeight) * 2 - 1;
+    prevMouseNoLock.x = mouseNoLock.x;
+    prevMouseNoLock.y = mouseNoLock.y;
+    mouseNoLock.x = newX;
+    mouseNoLock.y = newY;
+  }
+});
+
+// ============================================================================
+// DODGE LOGIC & HELPERS
+// ============================================================================
+// Trigger a dodge impulse in the specified direction (left/right strafe)
+function triggerDodge(side){
+  const now = performance.now() / 1000;
+  // Check cooldown to prevent spamming
+  if(now - lastDodgeTime < DODGE_COOLDOWN) return;
+  lastDodgeTime = now;
+  try{
+    // Use sparrow's world-space right vector so dodge follows current orientation
+    const spar = window.sparrow || null;
+    const q = new THREE.Quaternion();
+    if(spar && typeof spar.getWorldQuaternion === 'function'){
+      spar.getWorldQuaternion(q);
+    } else {
+      q.copy(orientation);
+    }
+    const right = new THREE.Vector3(1,0,0).applyQuaternion(q).normalize();
+    const forward = new THREE.Vector3(0,0,1).applyQuaternion(q).normalize();
+    
+    // Compute dodge direction based on pitch angle for height gain potential
+    // Get pitch angle from orientation (rotation around local right axis)
+    const euler = new THREE.Euler().setFromQuaternion(q, 'YXZ');
+    const pitch = euler.x;  // Pitch angle (positive = nose up)
+    
+    // Blend right and forward based on pitch to allow upward dodges
+    let dir = right.clone();
+    if(side !== 'right') dir = dir.negate();
+    
+    // Add forward component based on pitch (upward angle adds height gain potential)
+    const verticalComponent = Math.sin(pitch) * 0.5;  // Scale to moderate effect
+    dir.addScaledVector(forward, verticalComponent);
+    dir.normalize();
+    
+    const impulse = dir.multiplyScalar(DODGE_IMPULSE);
+    vel.add(impulse);
+  }catch(e){
+    // Fallback: use simulation orientation if world query unavailable
+    const right = new THREE.Vector3(1,0,0).applyQuaternion(orientation).normalize();
+    const forward = new THREE.Vector3(0,0,1).applyQuaternion(orientation).normalize();
+    const euler = new THREE.Euler().setFromQuaternion(orientation, 'YXZ');
+    const pitch = euler.x;
+    let dir = (side === 'right') ? right.clone() : right.clone().negate();
+    const verticalComponent = Math.sin(pitch) * 0.5;
+    dir.addScaledVector(forward, verticalComponent);
+    dir.normalize();
+    const impulse = dir.multiplyScalar(DODGE_IMPULSE);
+    vel.add(impulse);
+  }
+}
+
+// ============================================================================
+// HELPER: Look rotation quaternion
+// ============================================================================
+// Create a quaternion that points a local +Z forward and maintains local +Y as up
+function lookRotation(forward, up){
+  const z = forward.clone().normalize();
+  const x = new THREE.Vector3().crossVectors(up, z).normalize();
+  const y = new THREE.Vector3().crossVectors(z, x).normalize();
+  const m = new THREE.Matrix4();
+  m.makeBasis(x, y, z);
+  const q = new THREE.Quaternion().setFromRotationMatrix(m);
+  return q;
+}
+
+// ============================================================================
+// UI ELEMENT REFERENCES & SLIDER HANDLERS (safe-guarded)
+// ============================================================================
+const fpsEl = document.getElementById('fps');
+const speedEl = document.getElementById('speed');
+const heightEl = document.getElementById('height');
+const boostRange = document.getElementById('boostRange');
+const dodgeRange = document.getElementById('dodgeRange');
+const gravRange = document.getElementById('gravRange');
+const boostVal = document.getElementById('boostVal');
+const dodgeVal = document.getElementById('dodgeVal');
+const gravVal = document.getElementById('gravVal');
+
+// Update physics constants when sliders change
+function updateBoost(v){ BOOST_ACCEL = Number(v); if(boostVal) boostVal.textContent = String(BOOST_ACCEL); }
+function updateDodge(v){ DODGE_IMPULSE = Number(v); if(dodgeVal) dodgeVal.textContent = String(DODGE_IMPULSE); }
+function updateGrav(v){ GRAVITY = Number(v); if(gravVal) gravVal.textContent = String(GRAVITY); }
+
+// Attach slider listeners only if the elements exist (prevents throws when UI removed)
+if(boostRange) boostRange.addEventListener('input', ()=> updateBoost(boostRange.value));
+if(dodgeRange) dodgeRange.addEventListener('input', ()=> updateDodge(dodgeRange.value));
+if(gravRange) gravRange.addEventListener('input', ()=> updateGrav(gravRange.value));
+
+// ============================================================================
+// MAIN ANIMATION LOOP
+// ============================================================================
+let lastT = performance.now()/1000;
+let fpsTimer = performance.now();
+let frameCount = 0;
+
+function animate(){
+  requestAnimationFrame(animate);
+  const t = performance.now()/1000;
+  let dt = Math.min(0.033, t - lastT);  // Cap delta to 33ms to prevent huge jumps
+  lastT = t;
+  frameCount++;
+  
+  // Update FPS display every 0.5 seconds (only if element present)
+  if(t - fpsTimer >= 0.5){
+    if(fpsEl) fpsEl.textContent = Math.round((frameCount / (t - fpsTimer)));
+    frameCount = 0; fpsTimer = t;
+  }
+
+  // ========== ORIENTATION: Pointer-lock or free-cam aiming ==========
+  if(document.pointerLockElement === canvas){
+    // Pointer locked: mouse controls sparrow yaw only (left/right turning)
+    if(Math.abs(pointerDelta.x) > 0.0001){
+      // Yaw: rotate around world up
+      const yaw = -pointerDelta.x * MOUSE_SENS;
+      const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), yaw);
+      orientation.premultiply(qYaw);
+      pointerDelta.x = 0;
+    }
+    // Pitch is NOT controlled by mouse (use WASD or destabilizers for pitch)
+    pointerDelta.y = 0;
+  } else {
+    // Not pointer locked: camera orbit active
+    // Mouse controls camera only, sparrow orientation is NOT affected by mouse position
+    // (Sparrow orientation is controlled by pointer lock when available, WASD when destabilizers active)
+  }
+
+  // ========== DESTABILIZER CONTROLS (pitch and roll only) ==========
+  if(destabilizers){
+    // WASD applies pitch/roll when destabilizers active
+    let pitchInput = 0;
+    if(input.tiltF) pitchInput += 1;  // W = pitch up
+    if(input.tiltB) pitchInput -= 1;  // S = pitch down
+    let rollInput = 0;
+    if(input.tiltL) rollInput += 1;   // A = roll left
+    if(input.tiltR) rollInput -= 1;   // D = roll right
+    
+    // Pitch around world X axis (W/S) - always tilts in same direction
+    if(Math.abs(pitchInput) > 0.001){
+      const qPitch = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), pitchInput * PITCH_SPEED * dt);
+      orientation.multiply(qPitch);
+    }
+    
+    // Roll around world Z axis (A/D) - always rolls in same direction
+    if(Math.abs(rollInput) > 0.001){
+      const qRoll = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), rollInput * ROLL_SPEED * dt);
+      orientation.multiply(qRoll);
+    }
+    // When destabilizers active, do NOT auto-stabilize — user fully controls orientation
+  } else {
+    // Destabilizers off: auto-stabilization applies when airborne
+    const distToGround = pos.y - 0.0;
+    if(distToGround > GROUND_ALIGN_DIST + 0.15){
+      // Slowly slerp to upright, preserving current yaw
+      const e = new THREE.Euler().setFromQuaternion(orientation, 'YXZ');
+      const currentYaw = e.y;
+      const target = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, currentYaw, 0, 'YXZ'));
+      
+      // Use slower slerp if destabilizers were recently released
+      let slerpFactor = AIR_STABILIZE_SLERP;
+      if(destReleasedAt){
+        const since = t - destReleasedAt;
+        if(since >= 0 && since < DESTABILIZER_RECOVER_DURATION){
+          slerpFactor = DESTABILIZER_RECOVER_SLERP;  // Slow recovery window
+        }
+      }
+      orientation.slerp(target, slerpFactor);
+    }
+  }
+
+  orientation.normalize();
+
+  // ========== PHYSICS: Forces and velocit update ==========
+  const localForward = new THREE.Vector3(0,0,1).applyQuaternion(orientation).normalize();
+  const localRight = new THREE.Vector3(1,0,0).applyQuaternion(orientation).normalize();
+  const localUp = new THREE.Vector3(0,1,0).applyQuaternion(orientation).normalize();
+
+  // Boost (right-click): forward acceleration
+  if(input.boost){
+    vel.add(localForward.clone().multiplyScalar(BOOST_ACCEL * dt));
+  }
+
+  // Compute camera-relative directions for WASD movement
+  const camForward = new THREE.Vector3();
+  camera.getWorldDirection(camForward);
+  camForward.y = 0;
+  if(camForward.lengthSq() < 1e-6) camForward.set(0,0,1);
+  camForward.normalize();
+  const camRight = new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0), camForward).normalize();
+
+  // Horizontal movement (when destabilizers OFF)
+  if(!destabilizers){
+    let horizAccel = new THREE.Vector3(0,0,0);
+    if(input.moveF) horizAccel.add(camForward);
+    if(input.moveB) horizAccel.add(camForward.clone().negate());
+    if(input.moveR) horizAccel.add(camRight);
+    if(input.moveL) horizAccel.add(camRight.clone().negate());
+    if(horizAccel.lengthSq() > 0.0001){
+      horizAccel.normalize();
+      horizAccel.multiplyScalar(HORIZONTAL_ACCEL * dt);
+      vel.add(horizAccel);
+    } else {
+      // Small damping when no WASD input
+      const damp = Math.max(0.0, 1.0 - (AIR_DRAG * dt * 0.08));
+      vel.x *= damp; vel.z *= damp;
+    }
+  }
+
+  // Up-thrust (Space)
+  if(input.upThrust){
+    vel.y += UP_THRUST * dt;
+  }
+
+  // Gravity
+  vel.y -= GRAVITY * dt;
+
+  // Air drag/resistance
+  vel.multiplyScalar(1.0 - Math.min(0.16, AIR_DRAG * dt * 0.08));
+
+  // Speed limiter
+  if(vel.length() > MAX_SPEED) vel.setLength(MAX_SPEED);
+
+  // Integrate position
+  pos.addScaledVector(vel, dt);
+
+  // ========== GROUND ALIGNMENT (when near floor) ==========
+  // Aligns sparrow parallel to ground while preserving forward direction
+  const groundY = 0.0;
+  const dist = pos.y - groundY;
+  if(dist < GROUND_ALIGN_DIST){
+    // Compute forward projected onto ground plane
+    const forward = new THREE.Vector3(0,0,1).applyQuaternion(orientation).clone();
+    forward.y = 0;  // Project to XZ plane
+    if(forward.lengthSq() < 1e-6) forward.set(0,0,1);
+    forward.normalize();
+    // Build target quaternion with ground-up normal
+    const targetQ = lookRotation(forward, new THREE.Vector3(0,1,0));
+    orientation.slerp(targetQ, GROUND_ALIGN_SLERP);
+    // Friction with ground: slow downward velocity and clamp below ground
+    if(pos.y < 1.0){
+      pos.y = 1.0;
+      if(vel.y < -0.5) vel.y = Math.max(-0.5, -vel.y * 0.08);
+    }
+  }
+
+  // Apply updated physics to mesh
+  sparrow.position.copy(pos);
+  sparrow.quaternion.copy(orientation);
+
+  // ========== CAMERA FOLLOW & ORBIT ==========
+  // Compute ideal camera position orbiting around sparrow
+  // Camera follows sparrow's heading (yaw only) but ignores pitch/roll for smooth follow
+  
+  // Extract only the yaw from sparrow's full orientation (for smooth camera during rolls)
+  const euler = new THREE.Euler().setFromQuaternion(orientation, 'YXZ');
+  const yawOnlyQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, euler.y, 0, 'YXZ'));
+  const sparrowForwardYawOnly = new THREE.Vector3(0, 0, 1).applyQuaternion(yawOnlyQuat).normalize();
+  const sparrowRightYawOnly = new THREE.Vector3(1, 0, 0).applyQuaternion(yawOnlyQuat).normalize();
+  
+  // Compute offset using spherical coordinates in sparrow's heading frame (yaw only)
+  const r = cameraDistance;
+  const phi = cameraPitch;  // Vertical angle (up/down)
+  const theta = cameraYaw;  // Horizontal angle (left/right relative to sparrow's heading)
+  
+  // Build offset: maintain constant distance regardless of pitch angle
+  const offset = new THREE.Vector3(0, r * Math.sin(phi), 0);  // Vertical component (world-up)
+  offset.addScaledVector(sparrowRightYawOnly, r * Math.cos(phi) * Math.sin(theta));  // Right component
+  offset.addScaledVector(sparrowForwardYawOnly, -r * Math.cos(phi) * Math.cos(theta));  // Forward component
+  
+  // Compute desired camera position
+  const desiredCamPos = pos.clone().add(offset);
+  
+  // Smoothly lerp camera toward desired position (creates follow-with-delay effect)
+  camera.position.lerp(desiredCamPos, cameraFollowSpeed);
+  
+  // Prevent camera from clipping into the ground
+  const minCameraHeight = 0.5;  // Keep camera at least this high above ground
+  if(camera.position.y < groundY + minCameraHeight){
+    camera.position.y = groundY + minCameraHeight;
+  }
+  
+  // Keep camera upright (world up) even when sparrow flips upside down
+  camera.up.set(0, 1, 0);
+  
+  // Camera always looks at sparrow (camera direction influences where sparrow aims)
+  camera.lookAt(pos);
+
+  // Update UI displays
+  speedEl.textContent = vel.length().toFixed(1);
+  heightEl.textContent = pos.y.toFixed(1);
+  
+  // Update position and facing direction for debugging
+  document.getElementById('posX').textContent = pos.x.toFixed(2);
+  document.getElementById('posY').textContent = pos.y.toFixed(2);
+  document.getElementById('posZ').textContent = pos.z.toFixed(2);
+  const facingVector = new THREE.Vector3(0, 0, 1).applyQuaternion(orientation).normalize();
+  document.getElementById('facingDir').textContent = `${facingVector.x.toFixed(2)}, ${facingVector.y.toFixed(2)}, ${facingVector.z.toFixed(2)}`;
+
+  renderer.render(scene, camera);
+}
+
+// ============================================================================
+// INITIALIZATION & STARTUP
+// ============================================================================
+// Initialize sliders from current tuning values
+document.getElementById('boostRange').value = BOOST_ACCEL;
+document.getElementById('dodgeRange').value = DODGE_IMPULSE;
+document.getElementById('gravRange').value = GRAVITY;
+// Update display readouts
+if(typeof updateBoost === 'function') updateBoost(BOOST_ACCEL);
+if(typeof updateDodge === 'function') updateDodge(DODGE_IMPULSE);
+if(typeof updateGrav === 'function') updateGrav(GRAVITY);
+
+// Start main loop
+animate();
+console.log('animate started'); if(statusInit) statusInit.textContent = 'Model: running';
+
+// Window resize handler
+window.addEventListener('resize', ()=>{
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+});
+
+// Startup info logged to console
+console.log("Hybrid slipstream prototype loaded. Click canvas to lock pointer for mouse aiming. Shift = destabilizers (hold) -> WASD tilt. Q/E dodge. Space up-thrust. Right-click = boost.");
+</script>
+<script>
+// ============================================================================
+// MODEL TRANSFORM CONTROLS (live rotation, scale, position)
+// ============================================================================
+// UI elements for adjusting loaded model transform
+const ui = {
+  rotYaw: document.getElementById('rotYaw'), rotPitch: document.getElementById('rotPitch'), rotRoll: document.getElementById('rotRoll'),
+  rotYawVal: document.getElementById('rotYawVal'), rotPitchVal: document.getElementById('rotPitchVal'), rotRollVal: document.getElementById('rotRollVal'),
+  scaleSlider: document.getElementById('scaleSlider'), scaleVal: document.getElementById('scaleVal'),
+  posX: document.getElementById('posX'), posY: document.getElementById('posY'), posZ: document.getElementById('posZ'),
+  posXVal: document.getElementById('posXVal'), posYVal: document.getElementById('posYVal'), posZVal: document.getElementById('posZVal'),
+  resetBtn: document.getElementById('resetRot')
+};
+
+function deg(v){ return v * Math.PI / 180; }
+function rad(v){ return v / Math.PI * 180; }
+
+// Apply transform values from sliders to the currently-loaded model
+function safeApplyTransform(){
+  const m = window.lastLoadedModel; if(!m) return;
+  const y = deg(Number(ui.rotYaw.value || 0));
+  const x = deg(Number(ui.rotPitch.value || 0));
+  const z = deg(Number(ui.rotRoll.value || 0));
+  m.rotation.set(x, y, z);
+  const s = Number(ui.scaleSlider.value) || 1;
+  m.scale.set(s, s, s);
+  const px = Number(ui.posX.value) || 0;
+  const py = Number(ui.posY.value) || 0;
+  const pz = Number(ui.posZ.value) || 0;
+  m.position.set(px, py, pz);
+  if(ui.rotYawVal) ui.rotYawVal.textContent = ui.rotYaw.value + '°';
+  if(ui.rotPitchVal) ui.rotPitchVal.textContent = ui.rotPitch.value + '°';
+  if(ui.rotRollVal) ui.rotRollVal.textContent = ui.rotRoll.value + '°';
+  if(ui.scaleVal) ui.scaleVal.textContent = Number(ui.scaleSlider.value).toFixed(2) + 'x';
+  if(ui.posXVal) ui.posXVal.textContent = Number(ui.posX.value).toFixed(2);
+  if(ui.posYVal) ui.posYVal.textContent = Number(ui.posY.value).toFixed(2);
+  if(ui.posZVal) ui.posZVal.textContent = Number(ui.posZ.value).toFixed(2);
+}
+
+// Initialize sliders from a loaded model's current transform
+function tryInitControlsFromModel(m){
+  if(!m) return;
+  const rx = m.rotation.x || 0, ry = m.rotation.y || 0, rz = m.rotation.z || 0;
+  if(ui.rotYaw) ui.rotYaw.value = Math.round(rad(ry));
+  if(ui.rotPitch) ui.rotPitch.value = Math.round(rad(rx));
+  if(ui.rotRoll) ui.rotRoll.value = Math.round(rad(rz));
+  const s = (m.scale && m.scale.x) ? m.scale.x : 1;
+  if(ui.scaleSlider) ui.scaleSlider.value = Number(s).toFixed(2);
+  if(ui.posX) ui.posX.value = (m.position && m.position.x) ? m.position.x : 0;
+  if(ui.posY) ui.posY.value = (m.position && m.position.y) ? m.position.y : 0;
+  if(ui.posZ) ui.posZ.value = (m.position && m.position.z) ? m.position.z : 0;
+  safeApplyTransform();
+}
+
+// Apply a default transform preset to loaded model
+function applyDefaultPreset(){
+  if(ui.rotYaw) ui.rotYaw.value = '-0';
+  if(ui.rotPitch) ui.rotPitch.value = '-90';
+  if(ui.rotRoll) ui.rotRoll.value = '-90';
+  if(ui.scaleSlider) ui.scaleSlider.value = '0.04';
+  if(ui.posX) ui.posX.value = '-5.2';
+  if(ui.posY) ui.posY.value = '-15.0';
+  if(ui.posZ) ui.posZ.value = '-35.5';
+  safeApplyTransform();
+}
+
+// Capture the loaded model's local basis (forward/up/right) for control mapping
+function captureModelBasis(m){
+  try{
+    if(!m) return;
+    const q = new THREE.Quaternion();
+    m.getWorldQuaternion(q);
+    const forward = new THREE.Vector3(0,0,1).applyQuaternion(q).normalize();
+    const up = new THREE.Vector3(0,1,0).applyQuaternion(q).normalize();
+    const right = new THREE.Vector3(1,0,0).applyQuaternion(q).normalize();
+    window.modelBasis = { forward, up, right };
+    console.log('Model basis captured:', window.modelBasis);
+  }catch(e){ console.warn('captureModelBasis failed', e); }
+}
+
+// Wire up input handlers for transform sliders
+[ui.rotYaw, ui.rotPitch, ui.rotRoll, ui.scaleSlider, ui.posX, ui.posY, ui.posZ].forEach(el=>{ if(el) el.addEventListener('input', safeApplyTransform); });
+
+// Reset transform button: return sliders to defaults
+if(ui.resetBtn) ui.resetBtn.addEventListener('click', ()=>{
+  if(ui.rotYaw) ui.rotYaw.value = '0'; if(ui.rotPitch) ui.rotPitch.value = '0'; if(ui.rotRoll) ui.rotRoll.value = '0';
+  if(ui.scaleSlider) ui.scaleSlider.value = '1'; if(ui.posX) ui.posX.value='0'; if(ui.posY) ui.posY.value='0'; if(ui.posZ) ui.posZ.value='0';
+  safeApplyTransform();
+});
+</script>
+</body>
+</html>
