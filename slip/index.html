@@ -1,4 +1,3 @@
-
 <!doctype html>
 <html lang="en">
 <head>
@@ -46,12 +45,12 @@
       </div>
       <div style="display:flex;align-items:center;gap:6px">
         <label class="small">Pitch</label>
-  <input id="rotPitch" type="range" min="-180" max="180" value="0">
+  <input id="rotPitch" type="range" min="-180" max="180" value="-90">
         <span id="rotPitchVal" class="small">0°</span>
       </div>
       <div style="display:flex;align-items:center;gap:6px">
         <label class="small">Roll</label>
-  <input id="rotRoll" type="range" min="-180" max="180" value="0">
+  <input id="rotRoll" type="range" min="-180" max="180" value="-90">
         <span id="rotRollVal" class="small">0°</span>
       </div>
       <div style="display:flex;align-items:center;gap:6px">
@@ -61,18 +60,18 @@
       </div>
       <div style="display:flex;align-items:center;gap:6px">
         <label class="small">X</label>
-  <input id="posX" type="range" min="-100" max="100" step="0.01" value="-0.6">
-  <span id="posXVal" class="small">-0.60</span>
+  <input id="modelPosX" type="range" min="-100" max="100" step="0.01" value="-0.6">
+  <span id="modelPosXVal" class="small">-0.60</span>
       </div>
       <div style="display:flex;align-items:center;gap:6px">
         <label class="small">Y</label>
-  <input id="posY" type="range" min="-20" max="20" step="0.1" value="-3.25">
-  <span id="posYVal" class="small">-3.25</span>
+  <input id="modelPosY" type="range" min="-20" max="20" step="0.1" value="-3.25">
+  <span id="modelPosYVal" class="small">-3.25</span>
       </div>
       <div style="display:flex;align-items:center;gap:6px">
         <label class="small">Z</label>
-  <input id="posZ" type="range" min="-50" max="20" step="0.1" value="-15">
-  <span id="posZVal" class="small">-15.00</span>
+  <input id="modelPosZ" type="range" min="-50" max="20" step="0.1" value="-15">
+  <span id="modelPosZVal" class="small">-15.00</span>
       </div>
     </div>
   </div>
@@ -803,60 +802,37 @@ window.addEventListener('resize', ()=>{
 });
 
 // Startup info logged to console
-console.log("Hybrid slipstream prototype loaded. Click canvas to lock pointer for mouse aiming. Shift = destabilizers (hold) -> WASD tilt. Q/E dodge. Space up-thrust. Right-click = boost.");
+console.log("set :)");
 </script>
 <script>
 // ============================================================================
-// MODEL TRANSFORM CONTROLS (live rotation, scale, position) - FIXED
+// MODEL TRANSFORM CONTROLS (live rotation, scale, position)
 // ============================================================================
-
-// Grab all UI elements by their IDs
+// UI elements for adjusting loaded model transform
 const ui = {
-  rotYaw: document.getElementById('rotYaw'),
-  rotPitch: document.getElementById('rotPitch'),
-  rotRoll: document.getElementById('rotRoll'),
-  rotYawVal: document.getElementById('rotYawVal'),
-  rotPitchVal: document.getElementById('rotPitchVal'),
-  rotRollVal: document.getElementById('rotRollVal'),
-
-  scaleSlider: document.getElementById('scaleSlider'),
-  scaleVal: document.getElementById('scaleVal'),
-
-  posX: document.getElementById('posX'),
-  posY: document.getElementById('posY'),
-  posZ: document.getElementById('posZ'),
-  posXVal: document.getElementById('posXVal'),
-  posYVal: document.getElementById('posYVal'),
-  posZVal: document.getElementById('posZVal'),
-
-  resetBtn: document.getElementById('resetRot')
+  rotYaw: document.getElementById('rotYaw'), rotPitch: document.getElementById('rotPitch'), rotRoll: document.getElementById('rotRoll'),
+  rotYawVal: document.getElementById('rotYawVal'), rotPitchVal: document.getElementById('rotPitchVal'), rotRollVal: document.getElementById('rotRollVal'),
+  scaleSlider: document.getElementById('scaleSlider'), scaleVal: document.getElementById('scaleVal'),
+  posX: document.getElementById('modelPosX'), posY: document.getElementById('modelPosY'), posZ: document.getElementById('modelPosZ'),
+  posXVal: document.getElementById('modelPosXVal'), posYVal: document.getElementById('modelPosYVal'), posZVal: document.getElementById('modelPosZVal'),
 };
 
 function deg(v){ return v * Math.PI / 180; }
 function rad(v){ return v / Math.PI * 180; }
 
-// Apply all sliders to the model
+// Apply transform values from sliders to the currently-loaded model
 function safeApplyTransform(){
-  const m = window.lastLoadedModel;
-  if(!m) return;
-
-  // Rotation
-  const y = deg(Number(ui.rotYaw?.value || 0));
-  const x = deg(Number(ui.rotPitch?.value || 0));
-  const z = deg(Number(ui.rotRoll?.value || 0));
+  const m = window.lastLoadedModel; if(!m) return;
+  const y = deg(Number(ui.rotYaw.value || 0));
+  const x = deg(Number(ui.rotPitch.value || 0));
+  const z = deg(Number(ui.rotRoll.value || 0));
   m.rotation.set(x, y, z);
-
-  // Scale
-  const s = Number(ui.scaleSlider?.value) || 1;
+  const s = Number(ui.scaleSlider.value) || 1;
   m.scale.set(s, s, s);
-
-  // Position
-  const px = Number(ui.posX?.value) || 0;
-  const py = Number(ui.posY?.value) || 0;
-  const pz = Number(ui.posZ?.value) || 0;
+  const px = Number(ui.posX.value) || 0;
+  const py = Number(ui.posY.value) || 0;
+  const pz = Number(ui.posZ.value) || 0;
   m.position.set(px, py, pz);
-
-  // Update UI labels
   if(ui.rotYawVal) ui.rotYawVal.textContent = ui.rotYaw.value + '°';
   if(ui.rotPitchVal) ui.rotPitchVal.textContent = ui.rotPitch.value + '°';
   if(ui.rotRollVal) ui.rotRollVal.textContent = ui.rotRoll.value + '°';
@@ -866,48 +842,56 @@ function safeApplyTransform(){
   if(ui.posZVal) ui.posZVal.textContent = Number(ui.posZ.value).toFixed(2);
 }
 
-// Initialize sliders from current model transform
+// Initialize sliders from a loaded model's current transform
 function tryInitControlsFromModel(m){
   if(!m) return;
-  ui.rotYaw.value = Math.round(rad(m.rotation.y));
-  ui.rotPitch.value = Math.round(rad(m.rotation.x));
-  ui.rotRoll.value = Math.round(rad(m.rotation.z));
-  ui.scaleSlider.value = m.scale?.x?.toFixed(2) || 1;
-  ui.posX.value = m.position?.x || 0;
-  ui.posY.value = m.position?.y || 0;
-  ui.posZ.value = m.position?.z || 0;
+  const rx = m.rotation.x || 0, ry = m.rotation.y || 0, rz = m.rotation.z || 0;
+  if(ui.rotYaw) ui.rotYaw.value = Math.round(rad(ry));
+  if(ui.rotPitch) ui.rotPitch.value = Math.round(rad(rx));
+  if(ui.rotRoll) ui.rotRoll.value = Math.round(rad(rz));
+  const s = (m.scale && m.scale.x) ? m.scale.x : 1;
+  if(ui.scaleSlider) ui.scaleSlider.value = Number(s).toFixed(2);
+  if(ui.posX) ui.posX.value = (m.position && m.position.x) ? m.position.x : 0;
+  if(ui.posY) ui.posY.value = (m.position && m.position.y) ? m.position.y : 0;
+  if(ui.posZ) ui.posZ.value = (m.position && m.position.z) ? m.position.z : 0;
   safeApplyTransform();
 }
 
-// Wire up input events for all sliders
-[
-  ui.rotYaw, ui.rotPitch, ui.rotRoll,
-  ui.scaleSlider,
-  ui.posX, ui.posY, ui.posZ
-].forEach(el => {
-  if(el) el.addEventListener('input', safeApplyTransform);
-});
+// Apply a default transform preset to loaded model
+function applyDefaultPreset(){
+  if(ui.rotYaw) ui.rotYaw.value = '-0';
+  if(ui.rotPitch) ui.rotPitch.value = '-90';
+  if(ui.rotRoll) ui.rotRoll.value = '-90';
+  if(ui.scaleSlider) ui.scaleSlider.value = '0.04';
+  if(ui.posX) ui.posX.value = '-5.2';
+  if(ui.posY) ui.posY.value = '-15.0';
+  if(ui.posZ) ui.posZ.value = '-35.5';
+  safeApplyTransform();
+}
 
-// Reset button
+// Capture the loaded model's local basis (forward/up/right) for control mapping
+function captureModelBasis(m){
+  try{
+    if(!m) return;
+    const q = new THREE.Quaternion();
+    m.getWorldQuaternion(q);
+    const forward = new THREE.Vector3(0,0,1).applyQuaternion(q).normalize();
+    const up = new THREE.Vector3(0,1,0).applyQuaternion(q).normalize();
+    const right = new THREE.Vector3(1,0,0).applyQuaternion(q).normalize();
+    window.modelBasis = { forward, up, right };
+    console.log('Model basis captured:', window.modelBasis);
+  }catch(e){ console.warn('captureModelBasis failed', e); }
+}
+
+// Wire up input handlers for transform sliders
+[ui.rotYaw, ui.rotPitch, ui.rotRoll, ui.scaleSlider, ui.posX, ui.posY, ui.posZ].forEach(el=>{ if(el) el.addEventListener('input', safeApplyTransform); });
+
+// Reset transform button: return sliders to defaults
 if(ui.resetBtn) ui.resetBtn.addEventListener('click', ()=>{
-  ui.rotYaw.value = '0';
-  ui.rotPitch.value = '0';
-  ui.rotRoll.value = '0';
-  ui.scaleSlider.value = '1';
-  ui.posX.value = '0';
-  ui.posY.value = '0';
-  ui.posZ.value = '0';
+  if(ui.rotYaw) ui.rotYaw.value = '0'; if(ui.rotPitch) ui.rotPitch.value = '0'; if(ui.rotRoll) ui.rotRoll.value = '0';
+  if(ui.scaleSlider) ui.scaleSlider.value = '1'; if(ui.posX) ui.posX.value='0'; if(ui.posY) ui.posY.value='0'; if(ui.posZ) ui.posZ.value='0';
   safeApplyTransform();
 });
-
-// Optional: call this whenever your model is loaded
-function setupModelControls(model){
-  window.lastLoadedModel = model;
-  tryInitControlsFromModel(model);
-}
-
 </script>
 </body>
 </html>
-
-
