@@ -26,11 +26,29 @@
       user-select: none;
       z-index: 1;
     }
+
+    /* Slip link */
+    .slip-link {
+      position: absolute;
+      right: 12px;
+      bottom: 10px;
+      color: white;
+      font-size: 25px;
+      opacity: 0.6;
+      text-decoration: none;
+      z-index: 5;
+      transition: opacity 0.2s;
+    }
+    .slip-link:hover {
+      opacity: 1;
+    }
   </style>
 </head>
 <body>
   <canvas id="canvas"></canvas>
   <div class="center-text" id="centerText">theres not much here :(</div>
+
+  <a href="/slip" class="slip-link">slip</a>
 
   <script>
     const canvas = document.getElementById('canvas');
@@ -61,7 +79,6 @@
     const maxBouncesPerSec = 5;
     const bounceSlowDownRate = 0.02; 
 
-    // Map to store line opacities keyed by 'i-j' string (i<j)
     const lineOpacities = new Map();
 
     function randomVelocity() {
@@ -115,7 +132,6 @@
       dot.bounceTimes = dot.bounceTimes.filter(time => t - time <= 1000);
     }
 
-    // Reduced mouse repel radius to 60
     function bounceFromCursor(dot) {
       if (mouse.x === null || mouse.y === null) return false;
 
@@ -134,7 +150,6 @@
       return false;
     }
 
-    // On text bounce, fade out dot & respawn
     function bounceFromRect(dot, rect) {
       const buffer = 5;
       if (
@@ -184,14 +199,11 @@
       }
     }
 
-    // === updateLineOpacities with animation from earlier ===
     function updateLineOpacities(connections) {
-      // Mark all existing connections inactive initially
       for (const key of lineOpacities.keys()) {
         lineOpacities.set(key, { ...lineOpacities.get(key), active: false });
       }
 
-      // Mark current connections active, increase opacity and progress
       for (const [i, j] of connections) {
         const key = i < j ? `${i}-${j}` : `${j}-${i}`;
         const prev = lineOpacities.get(key);
@@ -204,7 +216,6 @@
         }
       }
 
-      // Fade out inactive connections
       for (const [key, val] of lineOpacities.entries()) {
         if (!val.active) {
           const newOpacity = val.opacity * 0.9;
@@ -218,7 +229,6 @@
       }
     }
 
-    // === drawLines with animation from earlier ===
     function drawLines(dots) {
       for (const [key, val] of lineOpacities.entries()) {
         if (val.opacity <= 0 || val.progress <= 0) continue;
@@ -229,7 +239,6 @@
         const midX = (d1.x + d2.x) / 2;
         const midY = (d1.y + d2.y) / 2;
 
-        // Partial points along line from dot to midpoint scaled by progress
         const p1x = d1.x + (midX - d1.x) * val.progress;
         const p1y = d1.y + (midY - d1.y) * val.progress;
 
@@ -239,13 +248,11 @@
         ctx.strokeStyle = `rgba(200,200,200,${val.opacity})`;
         ctx.lineWidth = 0.7;
 
-        // Draw line from dot1 to partial midpoint
         ctx.beginPath();
         ctx.moveTo(d1.x, d1.y);
         ctx.lineTo(p1x, p1y);
         ctx.stroke();
 
-        // Draw line from dot2 to partial midpoint
         ctx.beginPath();
         ctx.moveTo(d2.x, d2.y);
         ctx.lineTo(p2x, p2y);
@@ -253,7 +260,6 @@
       }
     }
 
-    // Dot-to-dot collision (elastic bounce)
     function handleDotCollisions() {
       for (let i = 0; i < dots.length; i++) {
         const a = dots[i];
@@ -297,64 +303,61 @@
       }
     }
 
-    // New: Click/tap attractor
-let attractPoint = null;
-let attracting = false;
-const attractRadius = 100;
-const attractStrength = 0.25;
+    let attractPoint = null;
+    let attracting = false;
+    const attractRadius = 100;
+    const attractStrength = 0.25;
 
-function attractDots() {
-  if (!attracting || !attractPoint) return;
-  for (const dot of dots) {
-    if (dot.fadingOut) continue;
+    function attractDots() {
+      if (!attracting || !attractPoint) return;
+      for (const dot of dots) {
+        if (dot.fadingOut) continue;
 
-    const dx = attractPoint.x - dot.x;
-    const dy = attractPoint.y - dot.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
+        const dx = attractPoint.x - dot.x;
+        const dy = attractPoint.y - dot.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
 
-    if (dist < attractRadius && dist > 0) {
-      const nx = dx / dist;
-      const ny = dy / dist;
-      const accel = attractStrength * (1 - dist / attractRadius);
-      dot.vx += nx * accel;
-      dot.vy += ny * accel;
+        if (dist < attractRadius && dist > 0) {
+          const nx = dx / dist;
+          const ny = dy / dist;
+          const accel = attractStrength * (1 - dist / attractRadius);
+          dot.vx += nx * accel;
+          dot.vy += ny * accel;
+        }
+      }
     }
-  }
-}
 
-// Mouse handling
-canvas.addEventListener('mousedown', e => {
-  attracting = true;
-  attractPoint = { x: e.clientX, y: e.clientY };
-});
-canvas.addEventListener('mousemove', e => {
-  if (attracting) {
-    attractPoint = { x: e.clientX, y: e.clientY };
-  }
-});
-canvas.addEventListener('mouseup', () => {
-  attracting = false;
-});
+    canvas.addEventListener('mousedown', e => {
+      attracting = true;
+      attractPoint = { x: e.clientX, y: e.clientY };
+    });
+    canvas.addEventListener('mousemove', e => {
+      if (attracting) {
+        attractPoint = { x: e.clientX, y: e.clientY };
+      }
+    });
+    canvas.addEventListener('mouseup', () => {
+      attracting = false;
+    });
 
-// Touch handling
-canvas.addEventListener('touchstart', e => {
-  attracting = true;
-  if (e.touches.length > 0) {
-    const touch = e.touches[0];
-    attractPoint = { x: touch.clientX, y: touch.clientY };
-  }
-}, { passive: true });
+    canvas.addEventListener('touchstart', e => {
+      attracting = true;
+      if (e.touches.length > 0) {
+        const touch = e.touches[0];
+        attractPoint = { x: touch.clientX, y: touch.clientY };
+      }
+    }, { passive: true });
 
-canvas.addEventListener('touchmove', e => {
-  if (e.touches.length > 0 && attracting) {
-    const touch = e.touches[0];
-    attractPoint = { x: touch.clientX, y: touch.clientY };
-  }
-}, { passive: true });
+    canvas.addEventListener('touchmove', e => {
+      if (e.touches.length > 0 && attracting) {
+        const touch = e.touches[0];
+        attractPoint = { x: touch.clientX, y: touch.clientY };
+      }
+    }, { passive: true });
 
-canvas.addEventListener('touchend', () => {
-  attracting = false;
-});
+    canvas.addEventListener('touchend', () => {
+      attracting = false;
+    });
 
     canvas.addEventListener('click', e => {
       attractPoint = { x: e.clientX, y: e.clientY };
@@ -388,8 +391,7 @@ canvas.addEventListener('touchend', () => {
             neighbors.push({ idx: j, dist });
           }
         }
-        neighbors.sort((a, b) => a.dist - b.dist);
-        neighbors = neighbors.slice(0, 4);
+        neighbors = neighbors.sort((a, b) => a.dist - b.dist).slice(0, 4);
 
         for (const n of neighbors) {
           currentConnections.push([i, n.idx]);
