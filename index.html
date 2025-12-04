@@ -5,11 +5,22 @@
   <title>cobawlt.dev</title>
   <link rel="icon" href="/favicon.ico" type="image/x-icon" />
   <style>
+
+    /* ───────────────────────────────────────────────
+       CUSTOM FONT (place the .ttf in the same folder)
+       ─────────────────────────────────────────────── */
+    @font-face {
+      font-family: 'KHInterference';
+      src: url('KH Interference Regular.ttf') format('truetype');
+      font-weight: normal;
+      font-style: normal;
+    }
+
     html, body {
       margin: 0; padding: 0; overflow: hidden;
       background: black;
       height: 100%; width: 100%;
-      font-family: Arial, sans-serif;
+      font-family: 'KHInterference', sans-serif; /* ← applied here */
       color: white;
     }
     canvas {
@@ -26,6 +37,7 @@
       white-space: nowrap;
       user-select: none;
       z-index: 1;
+      font-family: 'KHInterference', sans-serif; /* ← added */
     }
 
     /* small :) text under main */
@@ -40,6 +52,7 @@
       pointer-events: none;
       user-select: none;
       z-index: 1;
+      font-family: 'KHInterference', sans-serif; /* ← added */
     }
 
     /* Slip link (top-right fixed) */
@@ -53,6 +66,7 @@
       text-decoration: none;
       z-index: 5;
       transition: opacity 0.2s;
+      font-family: 'KHInterference', sans-serif; /* ← added */
     }
     .slip-link:hover {
       opacity: 1;
