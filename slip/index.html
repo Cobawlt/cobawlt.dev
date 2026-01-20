@@ -32,10 +32,13 @@
   <div class="param"><label class="small">Boost strength (Right click)</label><input id="boostRange" type="range" min="0" max="200" step="1" value="60"><span id="boostVal" class="small" style="min-width:48px;text-align:right;display:inline-block;margin-left:8px">60</span></div>
   <div class="param"><label class="small">dodge strength (Q/E)</label><input id="dodgeRange" type="range" min="0" max="200" step="1" value="100"><span id="dodgeVal" class="small" style="min-width:48px;text-align:right;display:inline-block;margin-left:8px">100</span></div>
   <div class="param"><label class="small">Gravity</label><input id="gravRange" type="range" min="0" max="50" step="0.1" value="9.81"><span id="gravVal" class="small" style="min-width:48px;text-align:right;display:inline-block;margin-left:8px">9.81</span></div>
-
+  <div class="param"><label class="small">Destabilizer acceleration</label><input id="tiltAccelRange" type="range" min="0.1" max="2.5" step="0.1" value="0.7"><span id="tiltAccelVal" class="small" style="min-width:48px;text-align:right;display:inline-block;margin-left:8px">0.7x</span></div>
+  <div class="param"><label class="small">Pitch speed</label><input id="pitchSpeedRange" type="range" min="0.5" max="5" step="0.1" value="1.4"><span id="pitchSpeedVal" class="small" style="min-width:48px;text-align:right;display:inline-block;margin-left:8px">1.4x</span></div>
+  <div class="param"><label class="small">Roll speed</label><input id="rollSpeedRange" type="range" min="0.5" max="5" step="0.1" value="1.4"><span id="rollSpeedVal" class="small" style="min-width:48px;text-align:right;display:inline-block;margin-left:8px">1.4x</span></div>
+  <div class="param"><label class="small">Yaw speed (gimbal)</label><input id="yawSpeedRange" type="range" min="0.0005" max="0.005" step="0.0005" value="0.0022"><span id="yawSpeedVal" class="small" style="min-width:48px;text-align:right;display:inline-block;margin-left:8px">0.0022</span></div>
   <div class="status">Speed: <span id="speed">0</span> m/s • Height: <span id="height">0</span> m • Destabilizers: <span id="destText">OFF</span></div>
   <div class="status">Pos: <span id="posX">0</span>, <span id="posY">0</span>, <span id="posZ">0</span> • Facing: <span id="facingDir">0, 0, 1</span></div>
-  <div style="margin-top:8px;">
+  <div style="margin-top:8px;display:none;">
     <div style="font-weight:600;color:#032a45;margin-bottom:6px">model control</div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <div style="display:flex;align-items:center;gap:6px">
@@ -121,8 +124,8 @@ const PHYS = {
   airDrag: 10.0,               // Air resistance damping factor
   maxSpeed: 200.0,             // Speed limiter cap
   dodgeCooldown: 0.25,         // Cooldown between dodge impulses (seconds)
-  rollSpeed: Math.PI*1.0,          // Roll rotation speed when tilting (destab mode) (rad/sec)
-  pitchSpeed: Math.PI*1.0,         // Pitch rotation speed when tilting (destab mode) (rad/sec)
+  rollSpeed: Math.PI*1.4,          // Roll rotation speed when tilting (destab mode) (rad/sec)
+  pitchSpeed: Math.PI*1.4,         // Pitch rotation speed when tilting (destab mode) (rad/sec)
   mouseSens: 0.0022,           // Pointer lock mouse sensitivity
   groundAlignDist: 1.2,        // Distance from ground to trigger alignment (units)
   groundAlignSlerp: 0.1,      // Ground alignment slerp factor per frame
@@ -143,7 +146,8 @@ let BOOST_ACCEL = PHYS.boostAccel, DODGE_IMPULSE = PHYS.dodgeImpulse, GRAVITY = 
     DESTABILIZER_RECOVER_DURATION = PHYS.destRecoverDuration,
     DESTABILIZER_RECOVER_SLERP = PHYS.destRecoverSlerp, SIDE_ALIGN_SPEED = PHYS.sideAlignSpeed,
     SIDE_ALIGN_MIN_SPEED = PHYS.sideAlignMinSpeed, CAMERA_TO_SPARROW_SLERP = PHYS.camToSparrowSlerp,
-    DODGE_COOLDOWN = PHYS.dodgeCooldown, SPARROW_PIVOT_FORWARD = 1.5;
+    DODGE_COOLDOWN = PHYS.dodgeCooldown, SPARROW_PIVOT_FORWARD = 1.5,
+    MAX_TILT_ACCELERATION = 0.7;
 
 // ============================================================================
 // THREE.JS SCENE SETUP
@@ -220,6 +224,22 @@ sparrow.add(sparrowVisual);
 sparrow.position.set(0, 6, 0);
 scene.add(sparrow);
 console.log('sparrow added'); if(statusInit) statusInit.textContent = 'Model: sparrow added';
+
+// ============================================================================
+// GIMBAL SPHERE (center of control)
+// ============================================================================
+// Create the gimbal sphere as an independent world object
+const gimbalSphereGeo = new THREE.SphereGeometry(0.5, 16, 16);
+const gimbalSphereMat = new THREE.MeshStandardMaterial({color:0x2986cc, emissive:0x2986cc, metalness:0.6, roughness:0.3});
+const gimbalSphere = new THREE.Mesh(gimbalSphereGeo, gimbalSphereMat);
+gimbalSphere.position.set(0, 6, 0);  // Same height as sparrow initially
+scene.add(gimbalSphere);
+
+// Gimbal direction indicator: arrow pointing forward above the sphere
+window.gimbalSphere = gimbalSphere;
+window.gimbalOrientation = new THREE.Quaternion();  // Controls gimbal/camera aiming (full 3D)
+window.sphereOrientation = new THREE.Quaternion();  // Sphere orientation (yaw only, locked at poles)
+window.sparrowFollowOrientation = new THREE.Quaternion();  // Sparrow follows with lag
 
 // Store references to procedural meshes so we can hide them when loading external model
 window.sparrowParts = { body: body, leftWing: lw, rightWing: rw, arrow: arrow };
@@ -326,6 +346,7 @@ loadExternalModel().catch(e => console.error('Model loader exception:', e));
 // ============================================================================
 // Position, velocity, orientation tracked each frame
 let pos = sparrow.position.clone();
+let prevPos = sparrow.position.clone();  // For calculating sparrow velocity
 let vel = new THREE.Vector3(0,0,0);
 let orientation = sparrow.quaternion.clone();
 let lastDodgeTime = -999;
@@ -334,17 +355,23 @@ let lastDodgeTime = -999;
 let destabilizers = false;
 const destText = document.getElementById('destText');
 let destReleasedAt = null; // Timestamp when destabilizers released (used for slow recovery window)
-
-// Camera follow parameters — camera orbits behind sparrow with smooth follow
-let cameraDistance = 15;      // Distance from sparrow to camera
-let cameraPitch = 0.5;        // Up/down angle (vertical, relative to sparrow's forward)
-let cameraYaw = 0;            // Left/right angle (horizontal, relative to sparrow's forward)
+let windowHasFocus = true;  // Track if the window has focus
+let cameraDistance = 15;      // Distance from gimbal to camera
+let cameraPitch = 0.5;        // Up/down angle (vertical, relative to gimbal facing)
+let cameraYaw = 0;            // Left/right angle (horizontal, relative to gimbal facing)
 let isOrbiting = false;       // True when middle-mouse dragging to orbit
 let lastOrbitX = 0, lastOrbitY = 0;
 let cameraFollowSpeed = 0.02; // Lerp speed for camera follow-with-delay (0=instant, 1=snappy)
+let sparrowOrientationLag = 0.008;  // How slowly sparrow catches up to gimbal orientation (lower = more lag, slower reset)
 
-// ============================================================================
-// INPUT HANDLING
+// Destabilizer input hold tracking — for acceleration effect
+let tiltInputHoldTimes = {
+  tiltF: 0,  // W hold time (pitch up)
+  tiltB: 0,  // S hold time (pitch down)
+  tiltL: 0,  // A hold time (roll left)
+  tiltR: 0   // D hold time (roll right)
+};
+// MAX_TILT_ACCELERATION is now a mutable global (see above) for UI slider control
 // ============================================================================
 // Keyboard input state tracker
 const input = {
@@ -398,6 +425,10 @@ window.addEventListener('keyup', (e)=> {
   if(keyUpMap[e.code]) { e.preventDefault(); keyUpMap[e.code](); }
 });
 
+// Track window focus state
+window.addEventListener('focus', ()=> { windowHasFocus = true; });
+window.addEventListener('blur', ()=> { windowHasFocus = false; });
+
 // ============================================================================
 // MOUSE & POINTER INPUT
 // ============================================================================
@@ -415,30 +446,8 @@ canvas.addEventListener('contextmenu', (e)=> { e.preventDefault(); });
 // Right mouse (button 2) for boost
 canvas.addEventListener('mousedown', (e)=>{ if(e.button === 2){ input.boost = true; e.preventDefault(); } });
 
-// Middle mouse (button 1) drag to orbit camera when not pointer-locked
-canvas.addEventListener('mousedown', (e)=>{
-  if(document.pointerLockElement === canvas) return;
-  if(e.button === 1){ isOrbiting = true; lastOrbitX = e.clientX; lastOrbitY = e.clientY; e.preventDefault(); }
-});
-
-// Right mouse (button 2) for boost
 // Global mouse up handlers (catch even if pointer leaves canvas)
 document.addEventListener('mouseup', (e)=>{ if(e.button === 2){ input.boost = false; } });
-window.addEventListener('mouseup', (e)=>{ if(e.button === 1) { isOrbiting = false; } });
-
-// Orbit camera with middle-mouse drag
-window.addEventListener('mousemove', (e)=>{
-  if(document.pointerLockElement === canvas) return;
-  if(!isOrbiting) return;
-  const dx = e.clientX - lastOrbitX; const dy = e.clientY - lastOrbitY;
-  lastOrbitX = e.clientX; lastOrbitY = e.clientY;
-  cameraYaw -= dx * 0.005;
-  cameraPitch += dy * 0.005;
-  // Clamp pitch to prevent camera flipping upside down (±60°)
-  const limit = Math.PI / 3;
-  if(cameraPitch > limit) cameraPitch = limit;
-  if(cameraPitch < -limit) cameraPitch = -limit;
-});
 
 // Wheel zoom
 canvas.addEventListener('wheel', (e)=>{
@@ -552,19 +561,35 @@ const heightEl = document.getElementById('height');
 const boostRange = document.getElementById('boostRange');
 const dodgeRange = document.getElementById('dodgeRange');
 const gravRange = document.getElementById('gravRange');
+const tiltAccelRange = document.getElementById('tiltAccelRange');
 const boostVal = document.getElementById('boostVal');
 const dodgeVal = document.getElementById('dodgeVal');
 const gravVal = document.getElementById('gravVal');
+const tiltAccelVal = document.getElementById('tiltAccelVal');
+const pitchSpeedRange = document.getElementById('pitchSpeedRange');
+const rollSpeedRange = document.getElementById('rollSpeedRange');
+const yawSpeedRange = document.getElementById('yawSpeedRange');
+const pitchSpeedVal = document.getElementById('pitchSpeedVal');
+const rollSpeedVal = document.getElementById('rollSpeedVal');
+const yawSpeedVal = document.getElementById('yawSpeedVal');
 
 // Update physics constants when sliders change
 function updateBoost(v){ BOOST_ACCEL = Number(v); if(boostVal) boostVal.textContent = String(BOOST_ACCEL); }
 function updateDodge(v){ DODGE_IMPULSE = Number(v); if(dodgeVal) dodgeVal.textContent = String(DODGE_IMPULSE); }
 function updateGrav(v){ GRAVITY = Number(v); if(gravVal) gravVal.textContent = String(GRAVITY); }
+function updateTiltAccel(v){ MAX_TILT_ACCELERATION = Number(v); if(tiltAccelVal) tiltAccelVal.textContent = String(MAX_TILT_ACCELERATION.toFixed(1)) + 'x'; }
+function updatePitchSpeed(v){ PITCH_SPEED = Math.PI * Number(v); if(pitchSpeedVal) pitchSpeedVal.textContent = String(Number(v).toFixed(1)) + 'x'; }
+function updateRollSpeed(v){ ROLL_SPEED = Math.PI * Number(v); if(rollSpeedVal) rollSpeedVal.textContent = String(Number(v).toFixed(1)) + 'x'; }
+function updateYawSpeed(v){ MOUSE_SENS = Number(v); if(yawSpeedVal) yawSpeedVal.textContent = String(Number(v).toFixed(4)); }
 
 // Attach slider listeners only if the elements exist (prevents throws when UI removed)
 if(boostRange) boostRange.addEventListener('input', ()=> updateBoost(boostRange.value));
 if(dodgeRange) dodgeRange.addEventListener('input', ()=> updateDodge(dodgeRange.value));
 if(gravRange) gravRange.addEventListener('input', ()=> updateGrav(gravRange.value));
+if(tiltAccelRange) tiltAccelRange.addEventListener('input', ()=> updateTiltAccel(tiltAccelRange.value));
+if(pitchSpeedRange) pitchSpeedRange.addEventListener('input', ()=> updatePitchSpeed(pitchSpeedRange.value));
+if(rollSpeedRange) rollSpeedRange.addEventListener('input', ()=> updateRollSpeed(rollSpeedRange.value));
+if(yawSpeedRange) yawSpeedRange.addEventListener('input', ()=> updateYawSpeed(yawSpeedRange.value));
 
 // ============================================================================
 // MAIN ANIMATION LOOP
@@ -586,27 +611,72 @@ function animate(){
     frameCount = 0; fpsTimer = t;
   }
 
-  // ========== ORIENTATION: Pointer-lock or free-cam aiming ==========
+  // ========== GIMBAL ORIENTATION: Mouse position controls gimbal facing ==========
   if(document.pointerLockElement === canvas){
-    // Pointer locked: mouse controls sparrow yaw only (left/right turning)
+    // Pointer locked: mouse delta controls gimbal yaw only
     if(Math.abs(pointerDelta.x) > 0.0001){
       // Yaw: rotate around world up
       const yaw = -pointerDelta.x * MOUSE_SENS;
       const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), yaw);
-      orientation.premultiply(qYaw);
+      window.gimbalOrientation.premultiply(qYaw);
       pointerDelta.x = 0;
     }
-    // Pitch is NOT controlled by mouse (use WASD or destabilizers for pitch)
     pointerDelta.y = 0;
   } else {
-    // Not pointer locked: camera orbit active
-    // Mouse controls camera only, sparrow orientation is NOT affected by mouse position
-    // (Sparrow orientation is controlled by pointer lock when available, WASD when destabilizers active)
+    // Not pointer locked: mouse position controls gimbal orientation
+    // Convert mouse position to normalized coordinates (-1 to 1)
+    const mouseX = (mouseNoLock.x * 0.5 + 0.5) * 2 - 1;  // Convert to -1..1
+    const mouseY = (mouseNoLock.y * 0.5 + 0.5) * 2 - 1;  // Convert to -1..1
+    
+    // Convert mouse position to gimbal yaw and pitch
+    const targetYaw = mouseX * Math.PI;  // Full horizontal range
+    let targetPitch = mouseY * (Math.PI * 0.9);  // Up to ±162 degrees before clamping
+    
+    // Clamp pitch to ±65 degrees to prevent extreme up/down
+    const pitchLimit = Math.PI * (65 / 180);  // 65 degrees in radians
+    if(targetPitch > pitchLimit) targetPitch = pitchLimit;
+    if(targetPitch < -pitchLimit) targetPitch = -pitchLimit;
+    
+    // Build target gimbal orientation from yaw and pitch
+    const targetGimbalQuat = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(targetPitch, targetYaw, 0, 'YXZ')
+    );
+    
+    // Smoothly slerp gimbal toward target (creates lag effect)
+    window.gimbalOrientation.slerp(targetGimbalQuat, 0.08);
   }
 
-  // ========== DESTABILIZER CONTROLS (pitch and roll only) ==========
+  // Normalize gimbal orientation
+  window.gimbalOrientation.normalize();
+  
+  // ========== SPHERE ORIENTATION: Yaw only (locked at poles for level camera) ==========
+  // Extract only yaw from gimbal orientation
+  const gimbalEulerForSphere = new THREE.Euler().setFromQuaternion(window.gimbalOrientation, 'YXZ');
+  window.sphereOrientation.setFromEuler(new THREE.Euler(0, gimbalEulerForSphere.y, 0, 'YXZ'));
+
+  // Normalize gimbal orientation (mouse-controlled, independent of sparrow)
+  window.gimbalOrientation.normalize();
+
+  // ========== SPARROW ORIENTATION: Follows gimbal with lag (when not using destabilizers) ==========
+  // If window is not focused and no pointer lock, lock sparrow to forward (0, 0, 1) facing
+  if(!windowHasFocus && document.pointerLockElement !== canvas){
+    // Lock orientation to forward facing
+    orientation.setFromEuler(new THREE.Euler(0, 0, 0, 'YXZ'));
+    window.sparrowFollowOrientation.copy(orientation);
+  } else if(!destabilizers){
+    // When destabilizers off: Sparrow's orientation slowly catches up to gimbal orientation
+    window.sparrowFollowOrientation.slerp(window.gimbalOrientation, sparrowOrientationLag);
+    window.sparrowFollowOrientation.normalize();
+    orientation.copy(window.sparrowFollowOrientation);
+  } else {
+    // When destabilizers on: Keep sparrowFollowOrientation updated to current orientation
+    // so when destabilizers turn off, there's no snap back
+    window.sparrowFollowOrientation.copy(orientation);
+  }
+
+  // ========== DESTABILIZER CONTROLS (pitch and roll on sparrow for slipstreaming) ==========
   if(destabilizers){
-    // WASD applies pitch/roll when destabilizers active
+    // WASD applies pitch/roll directly to sparrow when destabilizers active
     let pitchInput = 0;
     if(input.tiltF) pitchInput += 1;  // W = pitch up
     if(input.tiltB) pitchInput -= 1;  // S = pitch down
@@ -614,40 +684,45 @@ function animate(){
     if(input.tiltL) rollInput += 1;   // A = roll left
     if(input.tiltR) rollInput -= 1;   // D = roll right
     
-    // Pitch around world X axis (W/S) - always tilts in same direction
+    // Update hold times for acceleration effect
     if(Math.abs(pitchInput) > 0.001){
-      const qPitch = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), pitchInput * PITCH_SPEED * dt);
+      // Accumulate hold time based on which pitch input is active
+      if(input.tiltF) tiltInputHoldTimes.tiltF += dt;
+      if(input.tiltB) tiltInputHoldTimes.tiltB += dt;
+    } else {
+      tiltInputHoldTimes.tiltF = 0;
+      tiltInputHoldTimes.tiltB = 0;
+    }
+    
+    if(Math.abs(rollInput) > 0.001){
+      // Accumulate hold time based on which roll input is active
+      if(input.tiltL) tiltInputHoldTimes.tiltL += dt;
+      if(input.tiltR) tiltInputHoldTimes.tiltR += dt;
+    } else {
+      tiltInputHoldTimes.tiltL = 0;
+      tiltInputHoldTimes.tiltR = 0;
+    }
+    
+    // Calculate acceleration multiplier based on hold time (0.5 sec to reach full speed)
+    // Starts at MAX_TILT_ACCELERATION, ramps up to 1.0x over 0.5 seconds
+    const pitchHoldTime = Math.max(tiltInputHoldTimes.tiltF, tiltInputHoldTimes.tiltB);
+    const pitchAccel = MAX_TILT_ACCELERATION + (Math.min(pitchHoldTime / 0.5, 1.0) * (1.0 - MAX_TILT_ACCELERATION));
+    
+    const rollHoldTime = Math.max(tiltInputHoldTimes.tiltL, tiltInputHoldTimes.tiltR);
+    const rollAccel = MAX_TILT_ACCELERATION + (Math.min(rollHoldTime / 0.5, 1.0) * (1.0 - MAX_TILT_ACCELERATION));
+    
+    // Pitch around world X axis (W/S) - applied to sparrow only
+    if(Math.abs(pitchInput) > 0.001){
+      const qPitch = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), pitchInput * PITCH_SPEED * pitchAccel * dt);
       orientation.multiply(qPitch);
     }
     
-    // Roll around world Z axis (A/D) - always rolls in same direction
+    // Roll around world Z axis (A/D) - applied to sparrow only
     if(Math.abs(rollInput) > 0.001){
-      const qRoll = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), rollInput * ROLL_SPEED * dt);
+      const qRoll = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), rollInput * ROLL_SPEED * rollAccel * dt);
       orientation.multiply(qRoll);
     }
-    // When destabilizers active, do NOT auto-stabilize — user fully controls orientation
-  } else {
-    // Destabilizers off: auto-stabilization applies when airborne
-    const distToGround = pos.y - 0.0;
-    if(distToGround > GROUND_ALIGN_DIST + 0.15){
-      // Slowly slerp to upright, preserving current yaw
-      const e = new THREE.Euler().setFromQuaternion(orientation, 'YXZ');
-      const currentYaw = e.y;
-      const target = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, currentYaw, 0, 'YXZ'));
-      
-      // Use slower slerp if destabilizers were recently released
-      let slerpFactor = AIR_STABILIZE_SLERP;
-      if(destReleasedAt){
-        const since = t - destReleasedAt;
-        if(since >= 0 && since < DESTABILIZER_RECOVER_DURATION){
-          slerpFactor = DESTABILIZER_RECOVER_SLERP;  // Slow recovery window
-        }
-      }
-      orientation.slerp(target, slerpFactor);
-    }
   }
-
-  orientation.normalize();
 
   // ========== PHYSICS: Forces and velocit update ==========
   const localForward = new THREE.Vector3(0,0,1).applyQuaternion(orientation).normalize();
@@ -703,18 +778,18 @@ function animate(){
   pos.addScaledVector(vel, dt);
 
   // ========== GROUND ALIGNMENT (when near floor) ==========
-  // Aligns sparrow parallel to ground while preserving forward direction
+  // Aligns gimbal orientation parallel to ground while preserving forward direction
   const groundY = 0.0;
   const dist = pos.y - groundY;
   if(dist < GROUND_ALIGN_DIST){
     // Compute forward projected onto ground plane
-    const forward = new THREE.Vector3(0,0,1).applyQuaternion(orientation).clone();
+    const forward = new THREE.Vector3(0,0,1).applyQuaternion(window.gimbalOrientation).clone();
     forward.y = 0;  // Project to XZ plane
     if(forward.lengthSq() < 1e-6) forward.set(0,0,1);
     forward.normalize();
     // Build target quaternion with ground-up normal
     const targetQ = lookRotation(forward, new THREE.Vector3(0,1,0));
-    orientation.slerp(targetQ, GROUND_ALIGN_SLERP);
+    window.gimbalOrientation.slerp(targetQ, GROUND_ALIGN_SLERP);
     // Friction with ground: slow downward velocity and clamp below ground
     if(pos.y < 1.0){
       pos.y = 1.0;
@@ -726,43 +801,40 @@ function animate(){
   sparrow.position.copy(pos);
   sparrow.quaternion.copy(orientation);
 
-  // ========== CAMERA FOLLOW & ORBIT ==========
-  // Compute ideal camera position orbiting around sparrow
-  // Camera follows sparrow's heading (yaw only) but ignores pitch/roll for smooth follow
+  // ========== GIMBAL POSITIONING ==========
+  // Gimbal sphere orbits around sparrow position, staying ahead in the gimbal's facing direction
+  const gimbalDistance = -1;  // How far ahead the gimbal sphere floats
+  const gimbalForward = new THREE.Vector3(0,0,1).applyQuaternion(window.gimbalOrientation).normalize();
+  const gimbalOffset = gimbalForward.clone().multiplyScalar(gimbalDistance);
+  gimbalOffset.y = 1;  // Gimbal sits on top of sparrow
+  window.gimbalSphere.position.copy(pos).add(gimbalOffset);  
   
-  // Extract only the yaw from sparrow's full orientation (for smooth camera during rolls)
-  const euler = new THREE.Euler().setFromQuaternion(orientation, 'YXZ');
-  const yawOnlyQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, euler.y, 0, 'YXZ'));
-  const sparrowForwardYawOnly = new THREE.Vector3(0, 0, 1).applyQuaternion(yawOnlyQuat).normalize();
-  const sparrowRightYawOnly = new THREE.Vector3(1, 0, 0).applyQuaternion(yawOnlyQuat).normalize();
+  // Store current position for next frame's velocity calculation
+  prevPos.copy(pos);
+  // ========== CAMERA FOLLOW GIMBAL ==========
+  // Camera position stays behind gimbal sphere and faces its direction
+  const gimbalPos = window.gimbalSphere.position;
   
-  // Compute offset using spherical coordinates in sparrow's heading frame (yaw only)
-  const r = cameraDistance;
-  const phi = cameraPitch;  // Vertical angle (up/down)
-  const theta = cameraYaw;  // Horizontal angle (left/right relative to sparrow's heading)
+  // Position camera behind the gimbal, offset backwards from its facing direction
+  const cameraDistance = 15;  // Distance behind the sphere
+  const cameraOffset = gimbalForward.clone().multiplyScalar(-cameraDistance);
+  cameraOffset.y += 3;  // Slightly above the sphere
+  camera.position.copy(gimbalPos).add(cameraOffset);
   
-  // Build offset: maintain constant distance regardless of pitch angle
-  const offset = new THREE.Vector3(0, r * Math.sin(phi), 0);  // Vertical component (world-up)
-  offset.addScaledVector(sparrowRightYawOnly, r * Math.cos(phi) * Math.sin(theta));  // Right component
-  offset.addScaledVector(sparrowForwardYawOnly, -r * Math.cos(phi) * Math.cos(theta));  // Forward component
+  // Camera looks in the same direction the sphere is facing (far ahead point)
+  const cameraLookTarget = gimbalPos.clone().addScaledVector(gimbalForward, 100);
   
-  // Compute desired camera position
-  const desiredCamPos = pos.clone().add(offset);
+  // Point camera forward
+  camera.lookAt(cameraLookTarget);
   
-  // Smoothly lerp camera toward desired position (creates follow-with-delay effect)
-  camera.position.lerp(desiredCamPos, cameraFollowSpeed);
+  // Ensure camera up is world up
+  camera.up.set(0, 1, 0);
   
   // Prevent camera from clipping into the ground
-  const minCameraHeight = 0.5;  // Keep camera at least this high above ground
+  const minCameraHeight = 0.5;
   if(camera.position.y < groundY + minCameraHeight){
     camera.position.y = groundY + minCameraHeight;
   }
-  
-  // Keep camera upright (world up) even when sparrow flips upside down
-  camera.up.set(0, 1, 0);
-  
-  // Camera always looks at sparrow (camera direction influences where sparrow aims)
-  camera.lookAt(pos);
 
   // Update UI displays
   speedEl.textContent = vel.length().toFixed(1);
@@ -895,7 +967,6 @@ if(ui.resetBtn) ui.resetBtn.addEventListener('click', ()=>{
 </script>
 </body>
 </html>
-
 
 
 
