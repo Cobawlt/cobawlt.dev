@@ -87,7 +87,6 @@
 <footer> </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
-<!-- Import map needed so JSM loader modules that import from bare specifier 'three' resolve in the browser -->
 <script type="importmap">
   {
     "imports": {
@@ -110,6 +109,7 @@ window.addEventListener('unhandledrejection', function(e){
 });
 console.log('script start');
 const statusInit = document.getElementById('loadStatus'); if(statusInit) statusInit.textContent = 'Model: script started';
+let angularVelocityZ = 0; // Tracks the "spin" momentum for dodges
 
 // ============================================================================
 // PHYSICS & CONTROL CONSTANTS
@@ -134,7 +134,9 @@ const PHYS = {
   destRecoverSlerp: 0.006,     // Slower slerp during recovery window
   sideAlignSpeed: 0.0006,        // Side-facing alignment slerp factor (when moving)
   sideAlignMinSpeed: 0.5,      // Min speed to trigger side-facing alignment
-  camToSparrowSlerp: 1.5      // Sparrow aims to camera when free-cam active
+  camToSparrowSlerp: 1.5,      // Sparrow aims to camera when free-cam active
+  shiftGracePeriod: 0.15       // Grace period in seconds before destabilizers turn off
+  
 };
 
 // Mutable globals for UI slider updates — these get modified by slider inputs
@@ -237,9 +239,10 @@ scene.add(gimbalSphere);
 
 // Gimbal direction indicator: arrow pointing forward above the sphere
 window.gimbalSphere = gimbalSphere;
-window.gimbalOrientation = new THREE.Quaternion();  // Controls gimbal/camera aiming (full 3D)
-window.sphereOrientation = new THREE.Quaternion();  // Sphere orientation (yaw only, locked at poles)
-window.sparrowFollowOrientation = new THREE.Quaternion();  // Sparrow follows with lag
+// Replace your existing window.gimbalOrientation line with this:
+window.gimbalOrientation = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, 0, 'YXZ'));
+window.sphereOrientation = new THREE.Quaternion();
+window.sparrowFollowOrientation = new THREE.Quaternion().copy(window.gimbalOrientation);
 
 // Store references to procedural meshes so we can hide them when loading external model
 window.sparrowParts = { body: body, leftWing: lw, rightWing: rw, arrow: arrow };
@@ -356,13 +359,13 @@ let destabilizers = false;
 const destText = document.getElementById('destText');
 let destReleasedAt = null; // Timestamp when destabilizers released (used for slow recovery window)
 let windowHasFocus = true;  // Track if the window has focus
-let cameraDistance = 15;      // Distance from gimbal to camera
+let cameraDistance = 7;      // Distance from gimbal to camera
 let cameraPitch = 0.5;        // Up/down angle (vertical, relative to gimbal facing)
 let cameraYaw = 0;            // Left/right angle (horizontal, relative to gimbal facing)
 let isOrbiting = false;       // True when middle-mouse dragging to orbit
 let lastOrbitX = 0, lastOrbitY = 0;
-let cameraFollowSpeed = 0.02; // Lerp speed for camera follow-with-delay (0=instant, 1=snappy)
-let sparrowOrientationLag = 0.008;  // How slowly sparrow catches up to gimbal orientation (lower = more lag, slower reset)
+let cameraFollowSpeed = 0.005; // Lerp speed for camera follow-with-delay (0=instant, 1=snappy)
+let sparrowOrientationLag = 0.05;  // How slowly sparrow catches up to gimbal orientation (lower = more lag, slower reset)
 
 // Destabilizer input hold tracking — for acceleration effect
 let tiltInputHoldTimes = {
@@ -489,54 +492,32 @@ window.addEventListener('mousemove', (ev)=>{
 // ============================================================================
 // DODGE LOGIC & HELPERS
 // ============================================================================
-// Trigger a dodge impulse in the specified direction (left/right strafe)
+// Trigger a dodge impulse with slipstream roll and centripetal force
 function triggerDodge(side){
   const now = performance.now() / 1000;
-  // Check cooldown to prevent spamming
   if(now - lastDodgeTime < DODGE_COOLDOWN) return;
   lastDodgeTime = now;
-  try{
-    // Use sparrow's world-space right vector so dodge follows current orientation
-    const spar = window.sparrow || null;
-    const q = new THREE.Quaternion();
-    if(spar && typeof spar.getWorldQuaternion === 'function'){
-      spar.getWorldQuaternion(q);
-    } else {
-      q.copy(orientation);
-    }
-    const right = new THREE.Vector3(1,0,0).applyQuaternion(q).normalize();
-    const forward = new THREE.Vector3(0,0,1).applyQuaternion(q).normalize();
-    
-    // Compute dodge direction based on pitch angle for height gain potential
-    // Get pitch angle from orientation (rotation around local right axis)
-    const euler = new THREE.Euler().setFromQuaternion(q, 'YXZ');
-    const pitch = euler.x;  // Pitch angle (positive = nose up)
-    
-    // Blend right and forward based on pitch to allow upward dodges
-    let dir = right.clone();
-    if(side !== 'right') dir = dir.negate();
-    
-    // Add forward component based on pitch (upward angle adds height gain potential)
-    const verticalComponent = Math.sin(pitch) * 0.5;  // Scale to moderate effect
-    dir.addScaledVector(forward, verticalComponent);
-    dir.normalize();
-    
-    const impulse = dir.multiplyScalar(DODGE_IMPULSE);
-    vel.add(impulse);
-  }catch(e){
-    // Fallback: use simulation orientation if world query unavailable
-    const right = new THREE.Vector3(1,0,0).applyQuaternion(orientation).normalize();
-    const forward = new THREE.Vector3(0,0,1).applyQuaternion(orientation).normalize();
-    const euler = new THREE.Euler().setFromQuaternion(orientation, 'YXZ');
-    const pitch = euler.x;
-    let dir = (side === 'right') ? right.clone() : right.clone().negate();
-    const verticalComponent = Math.sin(pitch) * 0.5;
-    dir.addScaledVector(forward, verticalComponent);
-    dir.normalize();
-    const impulse = dir.multiplyScalar(DODGE_IMPULSE);
-    vel.add(impulse);
-  }
+  
+  const q = orientation.clone();
+  const right = new THREE.Vector3(1,0,0).applyQuaternion(q).normalize();
+  const forward = new THREE.Vector3(0,0,1).applyQuaternion(q).normalize();
+  let dir = (side === 'right') ? right.clone() : right.clone().negate();
+  
+  // 1. Primary Shove
+  vel.add(dir.multiplyScalar(DODGE_IMPULSE));
+
+  // 2. Centripetal Force (The Arc)
+  const curveStrength = 0.025;
+  const centripetalDir = new THREE.Vector3().crossVectors(vel, forward).normalize();
+  if (side === 'right') centripetalDir.negate();
+  vel.add(centripetalDir.multiplyScalar(vel.length() * curveStrength));
+
+  // 3. Flat Spin Kick (Yaw Momentum)
+  // Changed axis to Y (0, 1, 0) for a horizontal spin
+  const spinForce = 1.0; 
+  angularVelocityZ = (side === 'left') ? -spinForce : spinForce;
 }
+
 
 // ============================================================================
 // HELPER: Look rotation quaternion
@@ -611,71 +592,64 @@ function animate(){
     frameCount = 0; fpsTimer = t;
   }
 
-  // ========== GIMBAL ORIENTATION: Mouse position controls gimbal facing ==========
-  if(document.pointerLockElement === canvas){
-    // Pointer locked: mouse delta controls gimbal yaw only
-    if(Math.abs(pointerDelta.x) > 0.0001){
-      // Yaw: rotate around world up
+// ========== GIMBAL ORIENTATION: Mouse position controls gimbal facing ==========
+// ========== GIMBAL ORIENTATION: Locked until Pointer Lock ==========
+  if (windowHasFocus && document.pointerLockElement === canvas) {
+    if (Math.abs(pointerDelta.x) > 0.0001) {
       const yaw = -pointerDelta.x * MOUSE_SENS;
-      const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), yaw);
+      const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
       window.gimbalOrientation.premultiply(qYaw);
       pointerDelta.x = 0;
     }
     pointerDelta.y = 0;
-  } else {
-    // Not pointer locked: mouse position controls gimbal orientation
-    // Convert mouse position to normalized coordinates (-1 to 1)
-    const mouseX = (mouseNoLock.x * 0.5 + 0.5) * 2 - 1;  // Convert to -1..1
-    const mouseY = (mouseNoLock.y * 0.5 + 0.5) * 2 - 1;  // Convert to -1..1
+  }
+  // No "else" block means the camera orientation remains static if not locked
+  window.gimbalOrientation.normalize();
+  // ELSE: If window is blurred (tabbed out), we do nothing. 
+  // window.gimbalOrientation stays at its last value, freezing the camera.
+
+  window.gimbalOrientation.normalize();
+
+// ========== SPARROW SPIN PHYSICS (Flat Spin) ==========
+  if (Math.abs(angularVelocityZ) > 0.01) {
+    // Changed axis from Z (0,0,1) to Y (0,1,0)
+    const frameSpin = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), angularVelocityZ * dt);
+    orientation.multiply(frameSpin);
     
-    // Convert mouse position to gimbal yaw and pitch
-    const targetYaw = mouseX * Math.PI;  // Full horizontal range
-    let targetPitch = mouseY * (Math.PI * 0.9);  // Up to ±162 degrees before clamping
-    
-    // Clamp pitch to ±65 degrees to prevent extreme up/down
-    const pitchLimit = Math.PI * (65 / 180);  // 65 degrees in radians
-    if(targetPitch > pitchLimit) targetPitch = pitchLimit;
-    if(targetPitch < -pitchLimit) targetPitch = -pitchLimit;
-    
-    // Build target gimbal orientation from yaw and pitch
-    const targetGimbalQuat = new THREE.Quaternion().setFromEuler(
-      new THREE.Euler(targetPitch, targetYaw, 0, 'YXZ')
-    );
-    
-    // Smoothly slerp gimbal toward target (creates lag effect)
-    window.gimbalOrientation.slerp(targetGimbalQuat, 0.08);
+    // Friction: slowing the spin down
+    angularVelocityZ *= 0.92; 
   }
 
-  // Normalize gimbal orientation
-  window.gimbalOrientation.normalize();
-  
-  // ========== SPHERE ORIENTATION: Yaw only (locked at poles for level camera) ==========
-  // Extract only yaw from gimbal orientation
-  const gimbalEulerForSphere = new THREE.Euler().setFromQuaternion(window.gimbalOrientation, 'YXZ');
-  window.sphereOrientation.setFromEuler(new THREE.Euler(0, gimbalEulerForSphere.y, 0, 'YXZ'));
+  const distFromGround = pos.y - 0.0;
+  const isDestabilizing = destabilizers || (destReleasedAt && (t - destReleasedAt < PHYS.shiftGracePeriod));
 
-  // Normalize gimbal orientation (mouse-controlled, independent of sparrow)
-  window.gimbalOrientation.normalize();
-
-  // ========== SPARROW ORIENTATION: Follows gimbal with lag (when not using destabilizers) ==========
-  // If window is not focused and no pointer lock, lock sparrow to forward (0, 0, 1) facing
-  if(!windowHasFocus && document.pointerLockElement !== canvas){
-    // Lock orientation to forward facing
-    orientation.setFromEuler(new THREE.Euler(0, 0, 0, 'YXZ'));
+  if(!windowHasFocus) {
     window.sparrowFollowOrientation.copy(orientation);
-  } else if(!destabilizers){
-    // When destabilizers off: Sparrow's orientation slowly catches up to gimbal orientation
-    window.sparrowFollowOrientation.slerp(window.gimbalOrientation, sparrowOrientationLag);
-    window.sparrowFollowOrientation.normalize();
-    orientation.copy(window.sparrowFollowOrientation);
+  } else if(isDestabilizing) {
+    // Destabilizer Manual Tilt logic remains here...
+    window.sparrowFollowOrientation.copy(orientation);
   } else {
-    // When destabilizers on: Keep sparrowFollowOrientation updated to current orientation
-    // so when destabilizers turn off, there's no snap back
-    window.sparrowFollowOrientation.copy(orientation);
+    if(distFromGround < 1.2) {
+      // Near ground: Keep auto-leveling active
+      window.sparrowFollowOrientation.slerp(window.gimbalOrientation, 0.1);
+      orientation.copy(window.sparrowFollowOrientation);
+    } else {
+      // IN AIR: Only follow Camera Yaw (Left/Right)
+      const gEuler = new THREE.Euler().setFromQuaternion(window.gimbalOrientation, 'YXZ');
+      const yawOnly = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, gEuler.y, 0, 'YXZ'));
+      
+      // Use a very weak slerp (0.0005) so the nose points forward 
+      // but doesn't force the sparrow to "snap" level
+      orientation.slerp(yawOnly, 0.0005);
+    }
   }
 
   // ========== DESTABILIZER CONTROLS (pitch and roll on sparrow for slipstreaming) ==========
-  if(destabilizers){
+  if(isDestabilizing){
+    // Update text color to indicate active grace period
+    destText.textContent = 'ON';
+    destText.style.color = '#ff3d3d';
+
     // WASD applies pitch/roll directly to sparrow when destabilizers active
     let pitchInput = 0;
     if(input.tiltF) pitchInput += 1;  // W = pitch up
@@ -722,9 +696,12 @@ function animate(){
       const qRoll = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), rollInput * ROLL_SPEED * rollAccel * dt);
       orientation.multiply(qRoll);
     }
+  } else {
+    destText.textContent = 'OFF';
+    destText.style.color = '';
   }
 
-  // ========== PHYSICS: Forces and velocit update ==========
+  // ========== PHYSICS: Forces and velocity update ==========
   const localForward = new THREE.Vector3(0,0,1).applyQuaternion(orientation).normalize();
   const localRight = new THREE.Vector3(1,0,0).applyQuaternion(orientation).normalize();
   const localUp = new THREE.Vector3(0,1,0).applyQuaternion(orientation).normalize();
@@ -743,16 +720,16 @@ function animate(){
   const camRight = new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0), camForward).normalize();
 
   // Horizontal movement (when destabilizers OFF)
-  if(!destabilizers){
-    let horizAccel = new THREE.Vector3(0,0,0);
-    if(input.moveF) horizAccel.add(camForward);
-    if(input.moveB) horizAccel.add(camForward.clone().negate());
-    if(input.moveR) horizAccel.add(camRight);
-    if(input.moveL) horizAccel.add(camRight.clone().negate());
-    if(horizAccel.lengthSq() > 0.0001){
-      horizAccel.normalize();
-      horizAccel.multiplyScalar(HORIZONTAL_ACCEL * dt);
-      vel.add(horizAccel);
+  if(!isDestabilizing){
+    let horizAccelForce = new THREE.Vector3(0,0,0);
+    if(input.moveF) horizAccelForce.add(camForward);
+    if(input.moveB) horizAccelForce.add(camForward.clone().negate());
+    if(input.moveR) horizAccelForce.add(camRight);
+    if(input.moveL) horizAccelForce.add(camRight.clone().negate());
+    if(horizAccelForce.lengthSq() > 0.0001){
+      horizAccelForce.normalize();
+      horizAccelForce.multiplyScalar(HORIZONTAL_ACCEL * dt);
+      vel.add(horizAccelForce);
     } else {
       // Small damping when no WASD input
       const damp = Math.max(0.0, 1.0 - (AIR_DRAG * dt * 0.08));
@@ -783,12 +760,12 @@ function animate(){
   const dist = pos.y - groundY;
   if(dist < GROUND_ALIGN_DIST){
     // Compute forward projected onto ground plane
-    const forward = new THREE.Vector3(0,0,1).applyQuaternion(window.gimbalOrientation).clone();
-    forward.y = 0;  // Project to XZ plane
-    if(forward.lengthSq() < 1e-6) forward.set(0,0,1);
-    forward.normalize();
+    const forwardVec = new THREE.Vector3(0,0,1).applyQuaternion(window.gimbalOrientation).clone();
+    forwardVec.y = 0;  // Project to XZ plane
+    if(forwardVec.lengthSq() < 1e-6) forwardVec.set(0,0,1);
+    forwardVec.normalize();
     // Build target quaternion with ground-up normal
-    const targetQ = lookRotation(forward, new THREE.Vector3(0,1,0));
+    const targetQ = lookRotation(forwardVec, new THREE.Vector3(0,1,0));
     window.gimbalOrientation.slerp(targetQ, GROUND_ALIGN_SLERP);
     // Friction with ground: slow downward velocity and clamp below ground
     if(pos.y < 1.0){
@@ -803,9 +780,9 @@ function animate(){
 
   // ========== GIMBAL POSITIONING ==========
   // Gimbal sphere orbits around sparrow position, staying ahead in the gimbal's facing direction
-  const gimbalDistance = -1;  // How far ahead the gimbal sphere floats
-  const gimbalForward = new THREE.Vector3(0,0,1).applyQuaternion(window.gimbalOrientation).normalize();
-  const gimbalOffset = gimbalForward.clone().multiplyScalar(gimbalDistance);
+  const gimbalDistanceOffset = -1;  // How far ahead the gimbal sphere floats
+  const gimbalForwardVec = new THREE.Vector3(0,0,1).applyQuaternion(window.gimbalOrientation).normalize();
+  const gimbalOffset = gimbalForwardVec.clone().multiplyScalar(gimbalDistanceOffset);
   gimbalOffset.y = 1;  // Gimbal sits on top of sparrow
   window.gimbalSphere.position.copy(pos).add(gimbalOffset);  
   
@@ -816,13 +793,13 @@ function animate(){
   const gimbalPos = window.gimbalSphere.position;
   
   // Position camera behind the gimbal, offset backwards from its facing direction
-  const cameraDistance = 15;  // Distance behind the sphere
-  const cameraOffset = gimbalForward.clone().multiplyScalar(-cameraDistance);
+  const followDistance = 15;  // Distance behind the sphere
+  const cameraOffset = gimbalForwardVec.clone().multiplyScalar(-followDistance);
   cameraOffset.y += 3;  // Slightly above the sphere
   camera.position.copy(gimbalPos).add(cameraOffset);
   
   // Camera looks in the same direction the sphere is facing (far ahead point)
-  const cameraLookTarget = gimbalPos.clone().addScaledVector(gimbalForward, 100);
+  const cameraLookTarget = gimbalPos.clone().addScaledVector(gimbalForwardVec, 100);
   
   // Point camera forward
   camera.lookAt(cameraLookTarget);
@@ -967,6 +944,3 @@ if(ui.resetBtn) ui.resetBtn.addEventListener('click', ()=>{
 </script>
 </body>
 </html>
-
-
-
