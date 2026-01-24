@@ -242,6 +242,7 @@ const gimbalSphereMat = new THREE.MeshStandardMaterial({color:0x2986cc, emissive
 const gimbalSphere = new THREE.Mesh(gimbalSphereGeo, gimbalSphereMat);
 gimbalSphere.position.set(0, 6, 0);  // Same height as sparrow initially
 scene.add(gimbalSphere);
+gimbalSphere.visible = false;
 
 // Gimbal direction indicator: arrow pointing forward above the sphere
 window.gimbalSphere = gimbalSphere;
