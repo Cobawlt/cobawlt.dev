@@ -10,34 +10,40 @@
     position: absolute;left:12px;top:12px;color:#021b2b;
     background:linear-gradient(180deg, rgba(255,255,255,0.95), rgba(255,255,255,0.82));
     padding:12px;border-radius:8px;font-size:13px;backdrop-filter: blur(4px);
-    max-width:480px;box-shadow:0 8px 28px rgba(0,0,0,0.12)
+    max-width:480px;box-shadow:0 8px 28px rgba(0,0,0,0.12);
+    z-index: 10;
   }
-  #hint{opacity:.95;margin-top:8px;font-size:13px;color:#063d5b;}
+  
+  /* Hides the slider rows while keeping the data/IDs available for the script */
+  .param, .model-controls { display: none !important; }
+
   .small{font-size:12px;color:#052a3a;}
-  /* make the three.js canvas fill the window and sit behind UI overlays          python -m http.server 8000        */ 
   #canvas{position:fixed;left:0;top:0;width:100%;height:100%;display:block;z-index:0}
   footer{position: absolute;right:12px;bottom:12px;color:#073b5a;font-size:12px}
-  .param{display:flex;gap:6px;align-items:center;margin-top:8px}
-  .param input[type=range]{flex:1}
-  .big{font-weight:700;color:#032a45}
-  .status { margin-top:8px; font-size:12px; color:#052a45; }
+  .big{font-weight:700;color:#032a45;margin-bottom:4px;}
+  .status { margin-top:6px; font-size:12px; color:#052a45; line-height: 1.4; }
 </style>
 </head>
 <body>
 <canvas id="canvas"></canvas>
 <div id="overlay">
   <div class="big">i cant help but notice cobwalt is flying</div>
-  <div id="keys" class="small">
+  
+  <div class="param"><input id="boostRange" type="range" value="60"></div>
+  <div class="param"><input id="dodgeRange" type="range" value="100"></div>
+  <div class="param"><input id="gravRange" type="range" value="9.81"></div>
+  <div class="param"><input id="tiltAccelRange" type="range" value="0.7"></div>
+  <div class="param"><input id="pitchSpeedRange" type="range" value="1.4"></div>
+  <div class="param"><input id="rollSpeedRange" type="range" value="1.4"></div>
+  <div class="param"><input id="yawSpeedRange" type="range" value="0.0022"></div>
+
+  <div class="loadBig">
+    <b>Speed:</b> <span id="speed">0</span> m/s • <b>Height:</b> <span id="height">0</span> m<br>
+    <b>Destabilizers:</b> <span id="destText">OFF</span><br>
+    <b>Pos:</b> <span id="posX">0</span>, <span id="posY">0</span>, <span id="posZ">0</span><br>
+    <b>Facing:</b> <span id="facingDir">0, 0, 1</span>
   </div>
-  <div class="param"><label class="small">Boost strength (Right click)</label><input id="boostRange" type="range" min="0" max="200" step="1" value="60"><span id="boostVal" class="small" style="min-width:48px;text-align:right;display:inline-block;margin-left:8px">60</span></div>
-  <div class="param"><label class="small">dodge strength (Q/E)</label><input id="dodgeRange" type="range" min="0" max="200" step="1" value="100"><span id="dodgeVal" class="small" style="min-width:48px;text-align:right;display:inline-block;margin-left:8px">100</span></div>
-  <div class="param"><label class="small">Gravity</label><input id="gravRange" type="range" min="0" max="50" step="0.1" value="9.81"><span id="gravVal" class="small" style="min-width:48px;text-align:right;display:inline-block;margin-left:8px">9.81</span></div>
-  <div class="param"><label class="small">Destabilizer acceleration</label><input id="tiltAccelRange" type="range" min="0.1" max="2.5" step="0.1" value="0.7"><span id="tiltAccelVal" class="small" style="min-width:48px;text-align:right;display:inline-block;margin-left:8px">0.7x</span></div>
-  <div class="param"><label class="small">Pitch speed</label><input id="pitchSpeedRange" type="range" min="0.5" max="5" step="0.1" value="1.4"><span id="pitchSpeedVal" class="small" style="min-width:48px;text-align:right;display:inline-block;margin-left:8px">1.4x</span></div>
-  <div class="param"><label class="small">Roll speed</label><input id="rollSpeedRange" type="range" min="0.5" max="5" step="0.1" value="1.4"><span id="rollSpeedVal" class="small" style="min-width:48px;text-align:right;display:inline-block;margin-left:8px">1.4x</span></div>
-  <div class="param"><label class="small">Yaw speed (gimbal)</label><input id="yawSpeedRange" type="range" min="0.0005" max="0.005" step="0.0005" value="0.0022"><span id="yawSpeedVal" class="small" style="min-width:48px;text-align:right;display:inline-block;margin-left:8px">0.0022</span></div>
-  <div class="status">Speed: <span id="speed">0</span> m/s • Height: <span id="height">0</span> m • Destabilizers: <span id="destText">OFF</span></div>
-  <div class="status">Pos: <span id="posX">0</span>, <span id="posY">0</span>, <span id="posZ">0</span> • Facing: <span id="facingDir">0, 0, 1</span></div>
+</div>
   <div style="margin-top:8px;display:none;">
     <div style="font-weight:600;color:#032a45;margin-bottom:6px">model control</div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -79,7 +85,7 @@
     </div>
   </div>
 </div>
-<div id="loadStatus" style="position: absolute; left:12px; bottom:12px; background: rgba(255,255,255,0.9); padding:8px; border-radius:6px; font-size:12px; color:#022;">Model: checking...</div>
+<div id="loadStatus" style="position: absolute; left:12px; bottom:12px; background: rgba(255,255,255,0.9); padding:8px; border-radius:6px; font-size:12px; color:#022;">Model: checking...</div >
 <div id="loadBig" style="position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.6);color:#fff;padding:12px 18px;border-radius:10px;font-size:15px;display:none;z-index:9999">
   <div id="loadBigText">Loading...</div>
   <div style="margin-top:8px;text-align:center"><button id="loadBtn" style="margin-top:6px;padding:6px 12px;border-radius:6px;border:none;cursor:pointer">Load external model</button></div>
@@ -366,6 +372,7 @@ let isOrbiting = false;       // True when middle-mouse dragging to orbit
 let lastOrbitX = 0, lastOrbitY = 0;
 let cameraFollowSpeed = 0.005; // Lerp speed for camera follow-with-delay (0=instant, 1=snappy)
 let sparrowOrientationLag = 0.05;  // How slowly sparrow catches up to gimbal orientation (lower = more lag, slower reset)
+let smoothedCamTarget = new THREE.Vector3();
 
 // Destabilizer input hold tracking — for acceleration effect
 let tiltInputHoldTimes = {
@@ -397,11 +404,28 @@ const keyDownMap = {
   'KeyS': ()=> { input.moveB = true; if(destabilizers) input.tiltB = true; },
   'KeyD': ()=> { input.moveL = true; if(destabilizers) input.tiltL = true; },
   'KeyA': ()=> { input.moveR = true; if(destabilizers) input.tiltR = true; },
-  'ShiftLeft': ()=> { destabilizers = true; destText.textContent = 'ON'; destReleasedAt = null; },
-  'ShiftRight': ()=> { destabilizers = true; destText.textContent = 'ON'; destReleasedAt = null; },
+  'ShiftLeft': ()=> { 
+    destabilizers = true; 
+    destText.textContent = 'ON'; 
+    destReleasedAt = null;
+    // IMMEDIATE SWAP: If keys are already held, convert them to tilts now
+    if(input.moveF) input.tiltF = true;
+    if(input.moveB) input.tiltB = true;
+    if(input.moveL) input.tiltL = true;
+    if(input.moveR) input.tiltR = true;
+  },
+  'ShiftRight': ()=> { 
+    destabilizers = true; 
+    destText.textContent = 'ON'; 
+    destReleasedAt = null;
+    if(input.moveF) input.tiltF = true;
+    if(input.moveB) input.tiltB = true;
+    if(input.moveL) input.tiltL = true;
+    if(input.moveR) input.tiltR = true;
+  },
   'Space': ()=> input.upThrust = true,
-  'KeyE': ()=> triggerDodge('left'),   // Dodge left (strafe left)
-  'KeyQ': ()=> triggerDodge('right')   // Dodge right (strafe right)
+  'KeyE': ()=> triggerDodge('left'),
+  'KeyQ': ()=> triggerDodge('right')
 };
 
 // Key up handlers: release input state
@@ -631,7 +655,7 @@ function animate(){
   } else {
     if(distFromGround < 1.2) {
       // Near ground: Keep auto-leveling active
-      window.sparrowFollowOrientation.slerp(window.gimbalOrientation, 0.1);
+      window.sparrowFollowOrientation.slerp(window.gimbalOrientation, 0.01);
       orientation.copy(window.sparrowFollowOrientation);
     } else {
       // IN AIR: Only follow Camera Yaw (Left/Right)
@@ -720,21 +744,22 @@ function animate(){
   const camRight = new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0), camForward).normalize();
 
   // Horizontal movement (when destabilizers OFF)
+// Horizontal movement (ONLY when destabilizers are NOT active)
   if(!isDestabilizing){
     let horizAccelForce = new THREE.Vector3(0,0,0);
     if(input.moveF) horizAccelForce.add(camForward);
     if(input.moveB) horizAccelForce.add(camForward.clone().negate());
     if(input.moveR) horizAccelForce.add(camRight);
     if(input.moveL) horizAccelForce.add(camRight.clone().negate());
+    
     if(horizAccelForce.lengthSq() > 0.0001){
       horizAccelForce.normalize();
       horizAccelForce.multiplyScalar(HORIZONTAL_ACCEL * dt);
       vel.add(horizAccelForce);
-    } else {
-      // Small damping when no WASD input
-      const damp = Math.max(0.0, 1.0 - (AIR_DRAG * dt * 0.08));
-      vel.x *= damp; vel.z *= damp;
     }
+  } else {
+    // When destabilizing, we skip the horizAccelForce block entirely,
+    // effectively "swapping" the key function to Tilt/Spin logic.
   }
 
   // Up-thrust (Space)
@@ -823,7 +848,6 @@ function animate(){
   document.getElementById('posZ').textContent = pos.z.toFixed(2);
   const facingVector = new THREE.Vector3(0, 0, 1).applyQuaternion(orientation).normalize();
   document.getElementById('facingDir').textContent = `${facingVector.x.toFixed(2)}, ${facingVector.y.toFixed(2)}, ${facingVector.z.toFixed(2)}`;
-
   renderer.render(scene, camera);
 }
 
