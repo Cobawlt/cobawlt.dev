@@ -724,10 +724,10 @@ function animate(){
     // Calculate acceleration multiplier based on hold time (0.5 sec to reach full speed)
     // Starts at MAX_TILT_ACCELERATION, ramps up to 1.0x over 0.5 seconds
     const pitchHoldTime = Math.max(tiltInputHoldTimes.tiltF, tiltInputHoldTimes.tiltB);
-    const pitchAccel = MAX_TILT_ACCELERATION + (Math.min(pitchHoldTime / 0.5, 1.0) * (1.0 - MAX_TILT_ACCELERATION));
+    const pitchAccel = MAX_TILT_ACCELERATION + (Math.min(pitchHoldTime / 0.1, 1.0) * (1.0 - MAX_TILT_ACCELERATION));
     
     const rollHoldTime = Math.max(tiltInputHoldTimes.tiltL, tiltInputHoldTimes.tiltR);
-    const rollAccel = MAX_TILT_ACCELERATION + (Math.min(rollHoldTime / 0.5, 1.0) * (1.0 - MAX_TILT_ACCELERATION));
+    const rollAccel = MAX_TILT_ACCELERATION + (Math.min(rollHoldTime / 0.1, 1.0) * (1.0 - MAX_TILT_ACCELERATION));
     
     // Pitch with inertia: apply impulses that accumulate to angular velocity
     if(Math.abs(pitchInput) > 0.001){
