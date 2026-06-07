@@ -32,7 +32,7 @@
   <div class="param"><input id="boostRange" type="range" value="60"></div>
   <div class="param"><input id="dodgeRange" type="range" value="100"></div>
   <div class="param"><input id="gravRange" type="range" value="9.81"></div>
-  <div class="param"><input id="tiltAccelRange" type="range" value="0.7"></div>
+  <div class="param"><input id="tiltAccelRange" type="range" value="0.82"></div>
   <div class="param"><input id="pitchSpeedRange" type="range" value="1.4"></div>
   <div class="param"><input id="rollSpeedRange" type="range" value="1.4"></div>
   <div class="param"><input id="yawSpeedRange" type="range" value="0.0022"></div>
@@ -85,7 +85,7 @@
     </div>
   </div>
 </div>
-<div id="loadStatus" style="position: absolute; left:12px; bottom:12px; background: rgba(255,255,255,0.9); padding:8px; border-radius:6px; font-size:12px; color:#022;">Model: checking...</div >
+<div id="loadStatus" style="position: absolute; left:12px; bottom:12px; background: rgba(255,255,255,0.9); padding:8px; border-radius:6px; font-size:12px; color:#022; display: none;">Model: checking...</div >
 <div id="loadBig" style="position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.6);color:#fff;padding:12px 18px;border-radius:10px;font-size:15px;display:none;z-index:9999">
   <div id="loadBigText">Loading...</div>
   <div style="margin-top:8px;text-align:center"><button id="loadBtn" style="margin-top:6px;padding:6px 12px;border-radius:6px;border:none;cursor:pointer">Load external model</button></div>
@@ -115,6 +115,8 @@ window.addEventListener('unhandledrejection', function(e){
 });
 console.log('script start');
 const statusInit = document.getElementById('loadStatus'); if(statusInit) statusInit.textContent = 'Model: script started';
+let angularVelocityX = 0; // Pitch angular velocity (with inertia)
+let angularVelocityY = 0; // Yaw angular velocity (with inertia)  
 let angularVelocityZ = 0; // Tracks the "spin" momentum for dodges
 
 // ============================================================================
@@ -130,8 +132,8 @@ const PHYS = {
   airDrag: 10.0,               // Air resistance damping factor
   maxSpeed: 200.0,             // Speed limiter cap
   dodgeCooldown: 0.25,         // Cooldown between dodge impulses (seconds)
-  rollSpeed: Math.PI*1.4,          // Roll rotation speed when tilting (destab mode) (rad/sec)
-  pitchSpeed: Math.PI*1.4,         // Pitch rotation speed when tilting (destab mode) (rad/sec)
+  rollSpeed: Math.PI*3.0,          // Roll rotation speed when tilting (destab mode) (rad/sec)
+  pitchSpeed: Math.PI*3.0,         // Pitch rotation speed when tilting (destab mode) (rad/sec)
   mouseSens: 0.0022,           // Pointer lock mouse sensitivity
   groundAlignDist: 1.2,        // Distance from ground to trigger alignment (units)
   groundAlignSlerp: 0.1,      // Ground alignment slerp factor per frame
@@ -155,7 +157,7 @@ let BOOST_ACCEL = PHYS.boostAccel, DODGE_IMPULSE = PHYS.dodgeImpulse, GRAVITY = 
     DESTABILIZER_RECOVER_SLERP = PHYS.destRecoverSlerp, SIDE_ALIGN_SPEED = PHYS.sideAlignSpeed,
     SIDE_ALIGN_MIN_SPEED = PHYS.sideAlignMinSpeed, CAMERA_TO_SPARROW_SLERP = PHYS.camToSparrowSlerp,
     DODGE_COOLDOWN = PHYS.dodgeCooldown, SPARROW_PIVOT_FORWARD = 1.5,
-    MAX_TILT_ACCELERATION = 0.7;
+    MAX_TILT_ACCELERATION = 0.82;
 
 // ============================================================================
 // THREE.JS SCENE SETUP
@@ -168,7 +170,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 console.log('renderer created'); if(statusInit) statusInit.textContent = 'Model: renderer ok';
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xbfefff); // light blue sky
+scene.background = new THREE.Color(0x77bad0); // light blue sky
 // expose scene globally for loaders
 window.scene = scene;
 
@@ -431,10 +433,10 @@ const keyDownMap = {
 
 // Key up handlers: release input state
 const keyUpMap = {
-  'KeyW': ()=> { input.moveF = false; input.tiltF = false; },
-  'KeyS': ()=> { input.moveB = false; input.tiltB = false; },
-  'KeyD': ()=> { input.moveL = false; input.tiltL = false; },
-  'KeyA': ()=> { input.moveR = false; input.tiltR = false; },
+  'KeyW': ()=> { input.moveF = false; input.tiltF = false; tiltInputHoldTimes.tiltF = 0; },
+  'KeyS': ()=> { input.moveB = false; input.tiltB = false; tiltInputHoldTimes.tiltB = 0; },
+  'KeyD': ()=> { input.moveL = false; input.tiltL = false; tiltInputHoldTimes.tiltL = 0; },
+  'KeyA': ()=> { input.moveR = false; input.tiltR = false; tiltInputHoldTimes.tiltR = 0; },
   'ShiftLeft': ()=> { destabilizers = false; destText.textContent = 'OFF'; resetTiltInputs(); destReleasedAt = performance.now()/1000; },
   'ShiftRight': ()=> { destabilizers = false; destText.textContent = 'OFF'; resetTiltInputs(); destReleasedAt = performance.now()/1000; },
   'Space': ()=> input.upThrust = false
@@ -443,6 +445,12 @@ const keyUpMap = {
 // Reset all tilt inputs (used when destabilizers released)
 function resetTiltInputs(){
   input.tiltF = input.tiltB = input.tiltL = input.tiltR = false;
+  // Also reset hold times so rotation speed resets on key release
+  tiltInputHoldTimes.tiltF = 0;
+  tiltInputHoldTimes.tiltB = 0;
+  tiltInputHoldTimes.tiltL = 0;
+  tiltInputHoldTimes.tiltR = 0;
+  // Note: angular velocities are NOT reset here, allowing inertia to continue and decay naturally
 }
 
 // Wire up keyboard listeners
@@ -536,11 +544,6 @@ function triggerDodge(side){
   const centripetalDir = new THREE.Vector3().crossVectors(vel, forward).normalize();
   if (side === 'right') centripetalDir.negate();
   vel.add(centripetalDir.multiplyScalar(vel.length() * curveStrength));
-
-  // 3. Flat Spin Kick (Yaw Momentum)
-  // Changed axis to Y (0, 1, 0) for a horizontal spin
-  const spinForce = 1.0; 
-  angularVelocityZ = (side === 'left') ? -spinForce : spinForce;
 }
 
 
@@ -635,14 +638,26 @@ function animate(){
 
   window.gimbalOrientation.normalize();
 
-// ========== SPARROW SPIN PHYSICS (Flat Spin) ==========
+// ========== SPARROW ANGULAR VELOCITY PHYSICS (Pitch, Roll, Yaw with inertia) =========
+  // Apply pitch rotation (around X axis)
+  if (Math.abs(angularVelocityX) > 0.01) {
+    const framePitch = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), angularVelocityX * dt);
+    orientation.multiply(framePitch);
+    angularVelocityX *= 0.985; // Friction decay
+  }
+  
+  // Apply roll rotation (around Z axis)
   if (Math.abs(angularVelocityZ) > 0.01) {
-    // Changed axis from Z (0,0,1) to Y (0,1,0)
-    const frameSpin = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), angularVelocityZ * dt);
-    orientation.multiply(frameSpin);
-    
-    // Friction: slowing the spin down
-    angularVelocityZ *= 0.92; 
+    const frameRoll = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), angularVelocityZ * dt);
+    orientation.multiply(frameRoll);
+    angularVelocityZ *= 0.985; // Friction decay
+  }
+  
+  // Apply yaw rotation (around Y axis)
+  if (Math.abs(angularVelocityY) > 0.01) {
+    const frameYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), angularVelocityY * dt);
+    orientation.multiply(frameYaw);
+    angularVelocityY *= 0.985; // Friction decay
   }
 
   const distFromGround = pos.y - 0.0;
@@ -654,12 +669,16 @@ function animate(){
     // Destabilizer Manual Tilt logic remains here...
     window.sparrowFollowOrientation.copy(orientation);
   } else {
-    if(distFromGround < 1.2) {
+    // Disable auto-leveling when above 2m height
+    if(pos.y > 2) {
+      // High altitude: maintain current orientation, no auto-leveling
+      window.sparrowFollowOrientation.copy(orientation);
+    } else if(distFromGround < 1.2) {
       // Near ground: Keep auto-leveling active
       window.sparrowFollowOrientation.slerp(window.gimbalOrientation, 0.01);
       orientation.copy(window.sparrowFollowOrientation);
     } else {
-      // IN AIR: Only follow Camera Yaw (Left/Right)
+      // IN AIR (below 2m): Only follow Camera Yaw (Left/Right)
       const gEuler = new THREE.Euler().setFromQuaternion(window.gimbalOrientation, 'YXZ');
       const yawOnly = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, gEuler.y, 0, 'YXZ'));
       
@@ -710,16 +729,18 @@ function animate(){
     const rollHoldTime = Math.max(tiltInputHoldTimes.tiltL, tiltInputHoldTimes.tiltR);
     const rollAccel = MAX_TILT_ACCELERATION + (Math.min(rollHoldTime / 0.5, 1.0) * (1.0 - MAX_TILT_ACCELERATION));
     
-    // Pitch around world X axis (W/S) - applied to sparrow only
+    // Pitch with inertia: apply impulses that accumulate to angular velocity
     if(Math.abs(pitchInput) > 0.001){
-      const qPitch = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), pitchInput * PITCH_SPEED * pitchAccel * dt);
-      orientation.multiply(qPitch);
+      // Apply continuous impulse - accumulates each frame independent of dt
+      const pitchImpulse = pitchInput * PITCH_SPEED * pitchAccel * 0.016;
+      angularVelocityX += pitchImpulse;
     }
     
-    // Roll around world Z axis (A/D) - applied to sparrow only
+    // Roll with inertia: apply impulses that accumulate to angular velocity
     if(Math.abs(rollInput) > 0.001){
-      const qRoll = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), rollInput * ROLL_SPEED * rollAccel * dt);
-      orientation.multiply(qRoll);
+      // Apply continuous impulse - accumulates each frame independent of dt
+      const rollImpulse = rollInput * ROLL_SPEED * rollAccel * 0.016;
+      angularVelocityZ += rollImpulse;
     }
   } else {
     destText.textContent = 'OFF';
